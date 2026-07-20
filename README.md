@@ -2,27 +2,36 @@
 标定脚本测试较少，如果有问题可以通过上面的库进行标定，然后把文件传入本库中
 
 ## 项目目录：
-包含两个Primitives:
-    - roboarm_arm: wowrobo品牌roboarm机械臂
-    - orbbec_camera_roboarm: orbbec品牌RGB-D摄像头，型号Gemini 215 SN
-包含一个Skill：
-    - roboarm_grasp: 使用机械臂进行抓取的技能，包括classify and grasp和catch by instruction
+包含两个Primitives和一个Skill：
+
+| 类型 | 名称 | 描述 |
+| :--- | :--- | :--- |
+| Primitive | roboarm_arm | wowrobo品牌roboarm机械臂 |
+| Primitive | orbbec_camera_roboarm | orbbec Gemini 215 SN 摄像头|
+| Skill | roboarm_grasp | 使用机械臂进行抓取的技能 |
+
+以下是其他引用的包
+| 类型 | 名称 | 描述 |
+| :--- | :--- | :--- |
+| Primitive | audio_driver | ASR使用的驱动包 |
+| Service | speech | robonix内置ASR服务 |
+| Skill | roboarm_grasp | 使用机械臂进行抓取的技能 |
 
 ## 注意事项：
-你需要格外注意两个配置文件:
+你需要格外注意这几个配置文件:
     ./robonix_manifest.yaml: 起robonix时传入的参数
     ./skills/roboarm_grasp/config/config.yaml: 抓取skill的一些特有配置参数
     ./tools/config.yaml: 各类小工具可能需要的配置参数
 
 ## 使用教程：
-1.确保你使用的是python>=3.10，并已经装好了robonix，推荐使用conda进行环境管理
+**1.确保你使用的是python>=3.10，并已经装好了robonix，推荐使用conda进行环境管理**
 
-2.安装依赖
+**2.安装依赖**
 ```bash
 pip install -r ./requirements.txt
 ```
 
-3.安装相机sdk
+**3.安装相机sdk**
 先克隆仓库 https://github.com/orbbec/pyorbbecsdk/tree/v2-main 
 按 https://orbbec.github.io/pyorbbecsdk/source/2_installation/registration_script.html#quick-setup-recommended 注册元数据，以便你的电脑能解析相机数据。macos不用注册即可用。
 ```bash
@@ -32,19 +41,34 @@ python setup_env.py
 再安装pyorbbecsdk。下载.whl文件， https://github.com/orbbec/pyorbbecsdk/releases/tag/v2.0.13
 在其所在目录下执行pip install pyorbbecsdk-2.0.13-cp310-cp310-win_amd64.whl安装。
 
-4.根据 tools 文件夹中README所述测试设备连接，并进行标定
+**4.根据 tools 文件夹中README所述测试设备连接，并进行标定**
 
-5.编译robonix
+**5.编译robonix**
 ```bash
 rbnx build
 ```
 
-6.运行robonix
+**6.运行robonix**
+添加VLM全局参数和Tencent ASR全局参数
 ```bash
+export ROBONIX_ADVERTISE_HOST=127.0.0.1
+
+export VLM_BASE_URL=""
+export VLM_API_KEY=""
+export VLM_MODEL=""
+
+export TENCENTCLOUD_SECRET_ID=""
+export TENCENTCLOUD_SECRET_KEY=""
+export TENCENT_ASR_APPID=""
+
+#连接arm可能需要更改权限，具体接口改为自己的
+#ls -l /dev/serial/by-id/*
+#sudo chmod 666 /dev/ttyACM0
+
 rbnx boot -f robonix_manifest.yaml
 ```
 
-7.在另一bash上测试连接
+**7.在另一bash上测试连接**
 ```bash
 rbnx caps -v
 ```
@@ -57,7 +81,7 @@ ros2 topic list
 ```
 应该看到/roboarm/joint_states`、`/roboarm/end_pose`、`/roboarm/joint_command`、`/roboarm/camera/rgb等话题
 
-8.使用pilot执行操作
+**8.使用pilot执行操作**
 ```bash
 rbnx chat
 ```

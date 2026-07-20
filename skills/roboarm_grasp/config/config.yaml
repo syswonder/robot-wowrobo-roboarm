@@ -54,6 +54,13 @@ place_pos:
     keywords:
       - red
       - 红
+  yellow_block:
+    pos:
+      - 0.2
+      - 0.1
+    keywords:
+      - yellow
+      - 黄
   white_block:
     pos:
       - y

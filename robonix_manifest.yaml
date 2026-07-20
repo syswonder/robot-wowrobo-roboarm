@@ -45,7 +45,7 @@ primitive:
     path: primitives/roboarm_arm
     config:
       #机械臂串口
-      serial_port: /dev/ttyACM0
+      serial_port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5AAF288343-if00
       #机械臂模式，real为真机，sim为模拟
       arm_backend: real
       arm_offset:

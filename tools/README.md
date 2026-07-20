@@ -47,14 +47,14 @@ pip install -r requirements.txt
 cd ~/roboarm/robonix/roboarm/tools
 ```
 
-0. 测试相机正常工作
+**0. 测试相机正常工作**
 ```bash
 python orb_camera.py
 ```
 若能正常弹出显示图像（彩色图和深度图）的窗口，说明相机配置正常。
 如果失败，需要降低numpy版本到<2
 
-1. 标定关节 offset：
+**1. 标定关节 offset：**
 ```bash
 python calibrate_offset.py
 ```
@@ -64,7 +64,7 @@ python calibrate_offset.py
 接下来会不断输出当前各关节角度值（以=======为分割）。此时将机械臂摆放到初始状态（需要比较精确地摆放）：
 按ctrl+c键停止程序，最后输出的一组角度值（以=======为分割，5个为一组）作为5个关节的offset。将这5个offset复制到配置文件robonix_manifest.yaml中的arm_offset项下：
 
-2. 测试机械臂控制
+**2. 测试机械臂控制**
 ```bash
 python control_by_pos.py
 ```
@@ -72,7 +72,7 @@ python control_by_pos.py
 w/s控制前后，a/d控制左右，空格/shift控制夹爪升降，z/c控制夹爪旋转，q/e控制夹爪开闭，按Esc退出。
 若全部正常说明正确完成了标定。
 
-3. 手眼标定（输出到 skills/roboarm_grasp/assets/hand_eye/2d_homography.npy）
+**3. 手眼标定（输出到 skills/roboarm_grasp/assets/hand_eye/2d_homography.npy）**
 ```bash
 python calibrate_handeye_2d.py --mode calibrate
 ```
@@ -81,19 +81,19 @@ python calibrate_handeye_2d.py --mode calibrate
 - 这样鼠标点一次和按一次空格键就是一组数据。改变点的位置，重复收集4组以上数据，数据越多误差越小，一般10组即可。收集完毕后按ESC键退出计算标定结果。不能点错，否则要重新运行上述命令重新进行标定。
 - 标定的结果是得到一个矩阵（自动保存），表示相机坐标系（二维）到机械臂基座坐标系（z轴为桌面不变，故也是二维）的变换，从而可以完成图片上的像素坐标系到机械臂坐标系的转换
 
-4.测试标定结果：
+**4.测试标定结果：**
 ```bash
 python calibrate_handeye_2d.py --mode test
 ```
 在弹出的相机画面窗口中点击想要移动到的点，机械臂应当会移动到这一点，说明标定正常。
 
-5.安装YOLO模型
+**5.安装YOLO模型**
 下载训练好的YOLO模型（以.pt结尾），放在 skills\roboarm_grasp\assets\models\yolo\积木方块 目录下，
 将配置文件config.yaml中的classification_YOLO_model_path改为模型保存的路径(如果你要换用别的路径或模型)。
 用于识别积木方块的模型如下：
 https://www.modelscope.cn/models/AuYang03/YOLO-block-detect/file/view/master/best.pt?status=2
 
-6. YOLO 实时检测预览
+**6. YOLO 实时检测预览**
 ```bash
 python detect_yolo.py
 ```
