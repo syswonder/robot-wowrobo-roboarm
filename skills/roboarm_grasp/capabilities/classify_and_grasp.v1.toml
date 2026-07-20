@@ -1,0 +1,8 @@
+[contract]
+id      = "robonix/skill/roboarm_grasp/classify_and_grasp"
+version = "1"
+kind    = "skill"
+idl     = "roboarm_grasp/srv/ClassifyAndGrasp.srv"
+
+[mode]
+type = "rpc"

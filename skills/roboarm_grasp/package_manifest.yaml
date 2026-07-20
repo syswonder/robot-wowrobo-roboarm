@@ -1,0 +1,28 @@
+manifestVersion: 1
+
+build: bash scripts/build.sh
+
+start: bash scripts/start.sh
+
+package:
+  name: "robonix.skill.wowrobo.roboarm.grasp"
+  version: 0.1.0
+  description: 积木分类抓取与 LLM 指令抓取 skill，通过 Atlas 调用机械臂与相机原语。
+  tags:
+    - skill
+    - robonix
+    - grasp
+    - manipulation
+  maintainers:
+    - Yuzheng Gao <2300013159@stuu.pku.edu.cn>
+  license: Apache-2.0
+
+capabilities:
+  - name: robonix/skill/roboarm_grasp/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/skill/roboarm_grasp/grasp_by_instruction
+    path: capabilities/grasp_by_instruction.v1.toml
+  - name: robonix/skill/roboarm_grasp/classify_and_grasp
+    path: capabilities/classify_and_grasp.v1.toml
+
+depends: []

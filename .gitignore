@@ -1,0 +1,10 @@
+rbnx-build/
+rbnx-boot/
+__pycache__/
+*.pyc
+.venv/
+logs/
+Log/
+start.md
+TEST.md
+lerobot/

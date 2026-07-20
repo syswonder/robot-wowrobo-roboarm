@@ -1,0 +1,10 @@
+ultralytics>=8.0
+kinpy
+numpy
+scipy
+opencv-python
+openai
+pydantic
+toml
+pyyaml
+Pillow

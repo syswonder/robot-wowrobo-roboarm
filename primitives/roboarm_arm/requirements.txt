@@ -1,0 +1,4 @@
+kinpy
+numpy
+scipy
+requests

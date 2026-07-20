@@ -1,0 +1,68 @@
+# Roboarm grasp skill — motion, vision, and LLM parameters.
+# Paths are relative to skills/roboarm_grasp/assets/ unless absolute.
+
+#桌面高度，即机械臂坐标系下的桌面坐标，一般是测量出来的，单位m
+default_desktop_height: 0.075
+
+#夹爪抓取时间间隔，单位s
+catch_time_interval_s: 0.1
+#获取机械臂角度失败重试次数
+get_arm_angles_retry_times: 3
+arm_reach_mse_threshold_deg2: 1.0
+
+#夹爪转到一边，防止遮挡相机
+default_gripper_aside_pos:
+  - 0.1
+  - 0.0
+  - 0.12
+
+default_gripper_close_threshold: 0.05
+catch_raise_height: 0.1
+place_raise_height: 0.1
+go_down_before_open_gripper_in_place: false
+
+#大模型相关设置。如果你要用大模型做检测，就必须使其可用
+llm_base_url: https://api.ohmygpt.com/v1
+llm_api_key: ""
+prompts_file: prompts.toml
+https_proxy:
+llm_model: glm-4.6v-flash
+#如果相机放在臂对面，就写为true
+RotationCam2Arm: true
+
+# grasp_by_instruction 检测后端: llm | yolo 默认yolo，如果你要用大模型做检测，就改为llm
+instruction_detect_backend: yolo
+
+#YOLO模型路径和置信度
+classification_YOLO_model_path:
+  - models/yolo/积木方块/best.pt
+default_conf_thres: 0.8
+
+#默认将block放置的位置，如果有其他颜色块需要添加
+place_pos:
+  blue_block:
+    pos:
+      - -0.1
+      - 0.1
+    keywords:
+      - blue
+      - 蓝
+  red_block:
+    pos:
+      - 0.1
+      - 0.1
+    keywords:
+      - red
+      - 红
+  white_block:
+    pos:
+      - y
+      - x
+    keywords:
+      - white
+      - 白
+
+#在放置位置多远的块不再抓取，防止重复抓，单位m
+place_distance_threshold: 0.05
+#为防止夹爪撞上块而进行的偏移量，单位m
+catch_offset: 0.01

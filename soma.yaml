@@ -1,0 +1,67 @@
+urdf:
+  path: ./primitives/roboarm_arm/src/assets/urdf/lerobo/low_cost_robot.urdf
+  root_link: base_link
+  model_name: koch_follower
+
+robot:
+  id: roboarm_lerobo
+  display_name: "Roboarm LeRobot Koch 五自由度机械臂 + Orbbec RGB-D 相机"
+  family: fixed_manipulator
+  root_part: arm
+  dimensions: { length_m: 0.45, width_m: 0.45, height_m: 0.55 }
+  mass_kg: 3.0
+  exports: []
+  components:
+    - id: arm
+      type: manipulator
+      urdf_link: base_link
+      exports:
+        - provider_id: roboarm_arm
+          capabilities:
+            - path: robonix/primitive/arm/joint_states
+              description: "Continuous joint positions for the 5-DOF arm and gripper."
+            - path: robonix/primitive/arm/end_pose
+              description: "End-effector pose in the arm base frame."
+            - path: robonix/primitive/arm/joint_command
+              description: "Joint position commands for the arm and gripper."
+      components:
+        - id: gripper
+          type: parallel_jaw_gripper
+          state:
+            joint_name: gripper
+            open_position_m: 0.080
+            open_tolerance_m: 0.003
+          exports: []
+    - id: workspace_camera
+      type: rgbd_camera
+      urdf_link: base_link
+      exports:
+        - provider_id: orbbec_camera_roboarm
+          capabilities:
+            - path: robonix/primitive/camera/rgb
+              description: "Continuous RGB image stream from the Orbbec camera."
+            - path: robonix/primitive/camera/depth
+              description: "Continuous depth image stream from the Orbbec camera."
+            - path: robonix/primitive/camera/intrinsics
+              description: "Camera calibration used for projection."
+            - path: robonix/primitive/camera/extrinsics
+              description: "Static transform from base_link to the camera optical frame."
+            - path: robonix/primitive/camera/snapshot
+              description: "Capture one RGB frame on demand."
+            - path: robonix/primitive/camera/depth_snapshot
+              description: "Capture one depth frame on demand."
+
+description:
+  summary: "五自由度 LeRobot Koch 机械臂 + Orbbec RGB-D 相机，支持关节控制与视觉采集。"
+  can_do:
+    - "读取 5 关节与夹爪的实时状态"
+    - "发布末端位姿（FK）"
+    - "接收关节角命令驱动机械臂与夹爪"
+    - "采集 RGB 与深度图像"
+    - "提供相机内参与外参"
+  cannot_do:
+    - "自主运动规划（需上层 skill 或 service 实现）"
+    - "底盘移动或导航"
+  notes:
+    - "机械臂由 roboarm_arm 原语驱动；相机由 orbbec_camera_roboarm 原语驱动。"
+    - "本地 USB 相机使用 pyorbbecsdk；远程模式通过 HTTP MJPEG 流接入。"

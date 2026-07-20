@@ -1,0 +1,27 @@
+manifestVersion: 1
+
+build: bash scripts/build.sh
+
+start: bash scripts/start.sh
+
+package:
+  name: "robonix.primitive.wowrobo.roboarm.arm"
+  version: 0.1.0
+  description: LeRobot Koch 5-DOF arm primitive for Robonix via SOMA.
+  tags:
+    - primitive
+    - robonix
+    - arm
+    - lerobo
+  maintainers:
+    - Yuzheng Gao <2300013159@stuu.pku.edu.cn>
+  license: Apache-2.0
+
+capabilities:
+  - name: robonix/primitive/arm/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/primitive/arm/joint_states
+  - name: robonix/primitive/arm/end_pose
+  - name: robonix/primitive/arm/joint_command
+
+depends: []

@@ -1,0 +1,35 @@
+# Standalone tool config — only used by robonix/roboarm/tools/*
+# Does not affect rbnx boot / primitives / skills.
+
+#机械臂串口
+arm_port: /dev/ttyACM0
+#机械臂状态，real为真实机械臂，sim为仿真机械臂
+arm_backend: real
+#机械臂默认offset，
+#你不需要要修改它，它不起实际作用
+arm_offset:
+  - 0
+  - -30
+  - -40
+  - -50
+  - 0
+
+#相机ip，留空为USB相机，填IP为远程MJPEG
+camera_ip:
+camera_port: 8083
+cv2_headless_port:
+
+#以下这些是冗余，你不需要修改他们
+default_desktop_height: 0.075
+catch_time_interval_s: 0.1
+get_arm_angles_retry_times: 3
+arm_reach_mse_threshold_deg2: 1.0
+default_gripper_close_threshold: 0.05
+catch_raise_height: 0.1
+place_raise_height: 0.1
+
+#YOLO模型路径
+classification_YOLO_model_path:
+  - models/yolo/积木方块/best.pt
+#YOLO模型置信度阈值
+default_conf_thres: 0.8

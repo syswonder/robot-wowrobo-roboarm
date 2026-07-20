@@ -1,0 +1,11 @@
+# Offline calibration / test tools for robonix/roboarm.
+# These scripts do NOT run via rbnx boot and do not affect primitives/skills.
+
+opencv-python
+numpy
+scipy
+kinpy
+pyorbbecsdk
+ultralytics
+pyyaml
+flask

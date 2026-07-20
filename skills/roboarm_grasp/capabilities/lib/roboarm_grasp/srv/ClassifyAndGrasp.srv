@@ -1,0 +1,4 @@
+# 对当前相机画面运行 YOLO 分类检测并逐个抓取。
+---
+bool success
+std_msgs/String message

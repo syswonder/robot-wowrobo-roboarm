@@ -1,0 +1,142 @@
+catalog:
+  name: robonix.robot.wowrobo.roboarm
+  version: 0.1.0
+  description: Roboarm LeRobot Koch 五自由度机械臂 Robonix 部署。
+  tags:
+    - robot
+    - deploy
+    - robonix
+    - manipulator
+    - lerobo
+  maintainers:
+    - Yuzheng Gao <2300013159@stuu.pku.edu.cn>
+<<<<<<< HEAD
+=======
+  license: Apache-2.0
+>>>>>>> f83790b (Upload primitives and skills)
+
+name: roboarm
+
+env:
+  LOG: "INFO"
+  ROBONIX_ADVERTISE_HOST: "127.0.0.1"
+
+system:
+  atlas:
+    listen: 127.0.0.1:50051
+    log: info
+  executor:
+    listen: 127.0.0.1:50061
+    log: info
+  soma:
+    robot_yaml: ./soma.yaml
+  pilot:
+    listen: 127.0.0.1:50071
+    log: info
+    vlm:
+      upstream: ${VLM_BASE_URL}
+      api_key: ${VLM_API_KEY}
+      model: ${VLM_MODEL}
+      api_format: openai
+  liaison:
+    listen: 0.0.0.0:50081
+    log: info
+  memory: []
+
+primitive:
+  - name: roboarm_arm
+    path: primitives/roboarm_arm
+    config:
+      #机械臂串口
+      serial_port: /dev/ttyACM0
+      #机械臂模式，real为真机，sim为模拟
+      arm_backend: real
+      arm_offset:
+        - -6.55
+        - -23.47
+        - -36.57
+        - -76.88
+        - -3.03
+      robot_id: koch_follower
+      publish_rate_hz: 20
+      end_pose_frame: base_link
+      joint_names:
+        - joint1
+        - joint2
+        - joint3
+        - joint4
+        - joint5
+        - gripper
+      joint_states_topic: /roboarm/joint_states
+      end_pose_topic: /roboarm/end_pose
+      joint_command_topic: /roboarm/joint_command
+      gripper_open_width_m: 0.080
+      move_to_home_on_activate: true
+      #如果设备连不上还想启动robonix，改为true
+      allow_missing_hardware: false
+
+  - name: orbbec_camera_roboarm
+    path: primitives/orbbec_camera_roboarm
+    config:
+      #相机ip，留空为USB相机，填IP为远程MJPEG
+      camera_ip: ""
+      camera_port: 8083
+      enable_color: true
+      enable_depth: true
+      publish_rate_hz: 15
+      intrinsics_rate_hz: 1.0
+      rgb_topic: /roboarm/camera/rgb
+      depth_topic: /roboarm/camera/depth
+      intrinsics_topic: /roboarm/camera/camera_info
+      extrinsics_topic: /roboarm/camera/extrinsics
+      optical_frame: camera_color_optical_frame
+      base_frame: base_link
+      frame_timeout_ms: 100
+      #如果设备连不上还想启动robonix，改为true
+      allow_missing_hardware: false
+    
+  - name: audio_driver
+    url: https://github.com/syswonder/primitive-audio-driver-rbnx
+    branch: main
+    config:
+      mic_device: default
+      speaker_device: default
+
+  # - name: audio_client_bridge
+  #   url: https://github.com/syswonder/primitive-audio-client-bridge-rbnx
+  #   branch: main
+  #   config:
+  #     transport: reverse
+  #     listen_host: 0.0.0.0
+  #     listen_port: 60002
+
+service: 
+  - name: speech
+    path: ${ROBONIX_SOURCE_PATH}/services/speech
+    config:
+      speech_backend: tencent
+      default_speaker_provider_id: audio_driver
+      tencent_asr_appid: ${TENCENT_ASR_APPID}
+      tencent_asr_engine: 16k_zh
+
+skill:
+  - name: roboarm_grasp
+    path: skills/roboarm_grasp
+    config:
+      arm_provider_id: roboarm_arm
+      camera_provider_id: orbbec_camera_roboarm
+      arm_offset:
+        - -5.58
+        - -21.45
+        - -36.84
+        - -73.54
+        - 2.42
+      joint_names:
+        - joint1
+        - joint2
+        - joint3
+        - joint4
+        - joint5
+        - gripper
+      gripper_open_width_m: 0.080
+      motion_steps: 20
