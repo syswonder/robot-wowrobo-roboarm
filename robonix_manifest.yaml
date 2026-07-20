@@ -10,10 +10,7 @@ catalog:
     - lerobo
   maintainers:
     - Yuzheng Gao <2300013159@stuu.pku.edu.cn>
-<<<<<<< HEAD
-=======
   license: Apache-2.0
->>>>>>> f83790b (Upload primitives and skills)
 
 name: roboarm
 

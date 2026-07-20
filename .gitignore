@@ -7,3 +7,5 @@ logs/
 Log/
 start.md
 TEST.md
+**/*:Zone.Identifier
+*.Zone.Identifier
