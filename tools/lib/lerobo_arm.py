@@ -33,7 +33,7 @@ class LeroboArm(Arm):
         super().__init__(hand_eye_calibration_file=hand_eye_calibration_file)
 
         self.arm_backend = "real"
-        self.steps = 20
+        self.steps = int(get_config_value("motion_steps", 20, raise_if_missing=False))
         self.offset = [float(v) for v in get_config_value("arm_offset")]
         if len(self.offset) != 5:
             raise ValueError(

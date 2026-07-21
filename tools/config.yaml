@@ -1,35 +1,27 @@
 # Standalone tool config — only used by robonix/roboarm/tools/*
 # Does not affect rbnx boot / primitives / skills.
+#
+# 抓取/放置/YOLO 等参数从 skill 配置合并；本文件仅保留 tools 专用项，
+# 同名字段会覆盖 skill（请勿在此重复写 catch_raise_height 等，改 skill 配置即可）。
 
-#机械臂串口
-arm_port: /dev/ttyACM0
-#机械臂状态，real为真实机械臂，sim为仿真机械臂
+grasp_config: ../skills/roboarm_grasp/config/config.yaml
+
+# 机械臂串口
+arm_port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5AAF288343-if00
 arm_backend: real
-#机械臂默认offset，
-#你不需要要修改它，它不起实际作用
+# 标定后的关节 offset（与 robonix_manifest.yaml arm_offset 一致）
 arm_offset:
-  - 0
-  - -30
-  - -40
-  - -50
-  - 0
+  - 0.66
+  - -20.84
+  - -30.42
+  - -79.96
+  - 0.40
 
-#相机ip，留空为USB相机，填IP为远程MJPEG
+# 相机：留空 camera_ip 为 USB Orbbec
 camera_ip:
 camera_port: 8083
+# WSL 无 GUI 时可设端口，浏览器看画面（如 8765）
 cv2_headless_port:
 
-#以下这些是冗余，你不需要修改他们
-default_desktop_height: 0.075
-catch_time_interval_s: 0.1
-get_arm_angles_retry_times: 3
-arm_reach_mse_threshold_deg2: 1.0
-default_gripper_close_threshold: 0.05
-catch_raise_height: 0.1
-place_raise_height: 0.1
-
-#YOLO模型路径
-classification_YOLO_model_path:
-  - models/yolo/积木方块/best.pt
-#YOLO模型置信度阈值
-default_conf_thres: 0.8
+# 离线调试运动插值步数（对应 manifest 里 motion_steps）
+motion_steps: 20
