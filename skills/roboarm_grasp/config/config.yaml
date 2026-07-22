@@ -17,6 +17,10 @@ default_gripper_aside_pos:
   - 0.12
 
 default_gripper_close_threshold: 0.05
+# 夹爪闭合指令重复次数（串口/ROS 链路可能有延迟，多次下发更可靠）
+gripper_close_repeat: 2
+# 夹爪闭合后保持时间，单位 s（给夹爪足够时间夹紧再抬起）
+gripper_close_hold_s: 0.3
 catch_raise_height: 0.1
 place_raise_height: 0.1
 go_down_before_open_gripper_in_place: false

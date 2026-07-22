@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import copy
 import logging
 import os
 import threading
@@ -16,6 +15,7 @@ import numpy as np
 from robonix_api import ATLAS, Err, Ok, Skill
 from roboarm_core.arm.robonix_arm import RobonixArm
 from roboarm_core.config import get_config_value, init_config, resolve_asset
+from roboarm_core.grasp_pipeline import grasp_detections, move_gripper_aside
 from roboarm_core.llm.catch_by_llm import catch_by_instruction
 from roboarm_core.vision.yolo_detect import detect_objects_in_frame, load_model
 from sensor_msgs.msg import Image
@@ -195,62 +195,6 @@ except ImportError:  # pragma: no cover
     String = None  # type: ignore
 
 
-def _grasp_detections(detections: list) -> tuple[int, int, list]:
-    place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
-    place_distance_threshold = get_config_value(
-        "place_distance_threshold", default=0, raise_if_missing=False
-    )
-    offset = get_config_value("catch_offset")
-    success_count = 0
-    fail_count = 0
-    details: list[str] = []
-
-    for (u, v, w, h, r), score, class_id, class_name in detections:
-        angle_deg = np.rad2deg(r)
-        target_x, target_y = _arm.pixel2pos(u, v)
-        gripper_angle_rad = _arm.gripper_angle_by_longer(u, v, w, h, angle_deg)
-
-        class_place_pos_data = place_pos.get(class_name)
-        if class_place_pos_data is None or "pos" not in class_place_pos_data:
-            class_place_pos = [target_x, target_y]
-        else:
-            class_place_pos = copy.deepcopy(class_place_pos_data["pos"])
-            for i, v_ref in enumerate(class_place_pos):
-                if v_ref == "x":
-                    class_place_pos[i] = target_x
-                elif v_ref == "-x":
-                    class_place_pos[i] = -target_x
-                elif v_ref == "y":
-                    class_place_pos[i] = target_y
-                elif v_ref == "-y":
-                    class_place_pos[i] = -target_y
-
-        if (
-            place_distance_threshold > 0
-            and np.linalg.norm(
-                np.array(class_place_pos) - np.array([target_x, target_y])
-            )
-            < place_distance_threshold
-        ):
-            details.append(f"{class_name}: skipped (too close to place pos)")
-            continue
-
-        ok = _arm.catch_and_place(
-            target_x + offset * np.cos(gripper_angle_rad),
-            target_y + offset * np.sin(-gripper_angle_rad),
-            gripper_angle_rad,
-            class_place_pos,
-        )
-        if ok:
-            success_count += 1
-            details.append(f"{class_name}: OK")
-        else:
-            fail_count += 1
-            details.append(f"{class_name}: FAIL")
-
-    return success_count, fail_count, details
-
-
 if ClassifyAndGrasp_Request is not None:
 
     @skill.mcp("robonix/skill/roboarm_grasp/classify_and_grasp")
@@ -270,11 +214,7 @@ if ClassifyAndGrasp_Request is not None:
             for path in get_config_value("classification_YOLO_model_path", [])
         ]
         conf_thres = get_config_value("default_conf_thres")
-        default_gripper_aside_pos = get_config_value(
-            "default_gripper_aside_pos", raise_if_missing=False
-        )
-        if default_gripper_aside_pos:
-            _arm.move_to(default_gripper_aside_pos, 1, block_until_reach=True)
+        move_gripper_aside(_arm)
 
         detections: list = []
         for model_path in model_paths:
@@ -289,7 +229,7 @@ if ClassifyAndGrasp_Request is not None:
                 message=String(data="未检测到目标"),
             )
 
-        ok_n, fail_n, details = _grasp_detections(detections)
+        ok_n, fail_n, details = grasp_detections(_arm, detections)
         summary = f"检测 {len(detections)} 个，成功 {ok_n}，失败 {fail_n}； " + "; ".join(
             details
         )
