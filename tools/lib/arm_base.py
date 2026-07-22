@@ -35,6 +35,12 @@ class Arm:
         self.gripper_close_hold_s = float(
             get_config_value("gripper_close_hold_s", 0.3, raise_if_missing=False)
         )
+        self.gripper_open_hold_s = float(
+            get_config_value("gripper_open_hold_s", 0.3, raise_if_missing=False)
+        )
+        self.place_hover_settle_s = float(
+            get_config_value("place_hover_settle_s", 0.3, raise_if_missing=False)
+        )
         self.catch_time_interval_s = get_config_value("catch_time_interval_s")
         self.get_arm_angles_retry_times = get_config_value("get_arm_angles_retry_times")
         self.reach_mse_threshold = float(
@@ -162,6 +168,14 @@ class Arm:
         if self.gripper_close_hold_s > 0:
             time.sleep(self.gripper_close_hold_s)
 
+    def _open_gripper_and_hold(
+        self,
+        step_callback: StepCallback | None = None,
+    ) -> None:
+        self.set_gripper(gripper_open_0to1=1, step_callback=step_callback)
+        if self.gripper_open_hold_s > 0:
+            time.sleep(self.gripper_open_hold_s)
+
     def catch(
         self,
         target_x: float,
@@ -243,7 +257,9 @@ class Arm:
                 self.move_to_home(gripper_open_0to1=1)
                 return False
             time.sleep(self.catch_time_interval_s)
-        self.set_gripper(gripper_open_0to1=1, step_callback=step_callback)
+        elif self.place_hover_settle_s > 0:
+            time.sleep(self.place_hover_settle_s)
+        self._open_gripper_and_hold(step_callback=step_callback)
         if down:
             res = self.move_to(
                 [target_x, target_y, target_z + self.place_raise_height],
