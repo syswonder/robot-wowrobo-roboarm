@@ -17,9 +17,19 @@ default_gripper_aside_pos:
   - 0.12
 
 default_gripper_close_threshold: 0.05
+# 夹爪闭合指令重复次数（串口/ROS 链路可能有延迟，多次下发更可靠）
+gripper_close_repeat: 2
+# 夹爪闭合后保持时间，单位 s（给夹爪足够时间夹紧再抬起）
+gripper_close_hold_s: 0.3
+# 夹爪张开后保持时间，单位 s（等方块落稳、夹爪完全张开后再移动，避免放置时剧烈运动）
+gripper_open_hold_s: 0.3
+# 抬升高度，单位m
 catch_raise_height: 0.1
 place_raise_height: 0.1
+# 放置前先下降到桌面高度再开爪，放置更稳；若仍抖动可配合增大 gripper_open_hold_s
 go_down_before_open_gripper_in_place: false
+# 仅在 go_down_before_open_gripper_in_place 为 false 时生效：悬停到位后、开爪前等待机械臂停稳，单位 s
+place_hover_settle_s: 0.3
 
 #大模型相关设置。如果你要用大模型做检测，就必须使其可用
 llm_base_url: https://api.ohmygpt.com/v1

@@ -29,6 +29,16 @@ def init_config(
     global CONFIG, _CONFIG_PATH, _ASSETS_ROOT
     _CONFIG_PATH = Path(config_file).resolve()
     CONFIG = load_config(str(_CONFIG_PATH))
+
+    grasp_config = CONFIG.get("grasp_config")
+    if grasp_config:
+        grasp_path = Path(str(grasp_config))
+        if not grasp_path.is_absolute():
+            grasp_path = (_CONFIG_PATH.parent / grasp_path).resolve()
+        if grasp_path.is_file():
+            overlay = load_config(str(grasp_path))
+            CONFIG = {**overlay, **CONFIG}
+
     _ASSETS_ROOT = (
         Path(assets_root).resolve()
         if assets_root

@@ -17,18 +17,19 @@ tools/
 │   ├── local_camera.py      # 直连 Orbbec 相机
 │   └── cv2_display.py       # OpenCV 窗口 / 无头 Web 预览
 ├── calibrate_offset.py      # 关节 offset 标定
-├── check_arm_port.py        # 串口 / 电机在线诊断
+├── orb_camera.py            # 测试相机画面
 ├── calibrate_handeye_2d.py  # 2D 手眼标定
 ├── control_by_pos.py        # 键盘控制末端位置
+├── classify_and_grasp.py    # 离线 YOLO 分类抓取（调试参数）
 └── detect_yolo.py           # YOLO 检测预览
 ```
 
 ## 依赖
 
 ```bash
+# 在根目录下安装过依赖便无需这步
 cd ~/roboarm/robonix/roboarm/tools
 pip install -r requirements.txt
-# 在根目录下安装过依赖便无需这步
 # lerobot 已由 primitives/roboarm_arm/src/vendor/lerobot 提供
 ```
 
@@ -96,4 +97,28 @@ https://www.modelscope.cn/models/AuYang03/YOLO-block-detect/file/view/master/bes
 **6. YOLO 实时检测预览**
 ```bash
 python detect_yolo.py
+```
+
+**7. 离线 classify and grasp（调试抓取参数，不启动 Robonix）**
+```bash
+python classify_and_grasp.py
+```
+
+- 实时显示 YOLO 检测框
+- **g** 或 **空格**：对当前画面检测结果执行抓取（逻辑与 skill `classify_and_grasp` 一致）
+- **h**：回 home
+- **Esc**：退出
+
+抓取/放置参数（`place_pos`、`catch_raise_height` 等）默认读取
+`skills/roboarm_grasp/config/config.yaml`（由 `tools/config.yaml` 的 `grasp_config` 指定）。
+修改 skill 配置后重启本工具即可调试，无需改 Robonix manifest。
+
+单轮抓取（等同 MCP 一次调用）：
+```bash
+python classify_and_grasp.py --once
+```
+
+使用 skill 配置覆盖全部参数（仍保留 tools 里的 `arm_port` 等）：
+```bash
+TOOLS_CONFIG=config.yaml python classify_and_grasp.py
 ```

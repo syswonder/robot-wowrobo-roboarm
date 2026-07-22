@@ -55,7 +55,7 @@ primitive:
         - -76.88
         - -3.03
       robot_id: koch_follower
-      publish_rate_hz: 20
+      publish_rate_hz: 40
       end_pose_frame: base_link
       joint_names:
         - joint1
