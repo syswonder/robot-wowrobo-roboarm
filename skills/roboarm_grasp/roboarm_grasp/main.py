@@ -14,10 +14,11 @@ import cv2
 import numpy as np
 from robonix_api import ATLAS, Err, Ok, Skill
 from roboarm_core.arm.robonix_arm import RobonixArm
-from roboarm_core.config import get_config_value, init_config, resolve_asset
-from roboarm_core.grasp_pipeline import grasp_detections, move_gripper_aside
+from roboarm_core.config import init_config
+from roboarm_core.grasp_pipeline import grasp_detections, move_gripper_aside, run_classify_yolo_detection
 from roboarm_core.llm.catch_by_llm import catch_by_instruction
-from roboarm_core.vision.yolo_detect import detect_objects_in_frame, load_model
+from roboarm_core.cv2_display import destroy_all_windows
+from roboarm_core.vision.detect_viz import is_dev_mode
 from sensor_msgs.msg import Image
 
 log = logging.getLogger("roboarm_grasp")
@@ -177,6 +178,8 @@ def deactivate():
     _rgb_sub = None
     with _frame_lock:
         _latest_bgr = None
+    if is_dev_mode():
+        destroy_all_windows()
     log.info("roboarm_grasp deactivated")
     return Ok()
 
@@ -209,19 +212,8 @@ if ClassifyAndGrasp_Request is not None:
                 message=String(data="无法获取相机画面"),
             )
 
-        model_paths = [
-            resolve_asset(path)
-            for path in get_config_value("classification_YOLO_model_path", [])
-        ]
-        conf_thres = get_config_value("default_conf_thres")
         move_gripper_aside(_arm)
-
-        detections: list = []
-        for model_path in model_paths:
-            model = load_model(str(model_path))
-            detections.extend(
-                detect_objects_in_frame(model, frame, conf_thres=conf_thres)
-            )
+        detections = run_classify_yolo_detection(frame)
 
         if not detections:
             return ClassifyAndGrasp_Response(

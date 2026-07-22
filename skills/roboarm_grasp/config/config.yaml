@@ -32,16 +32,16 @@ go_down_before_open_gripper_in_place: false
 place_hover_settle_s: 0.3
 
 #大模型相关设置。如果你要用大模型做检测，就必须使其可用
-llm_base_url: https://api.ohmygpt.com/v1
+llm_base_url: http://token-hub.lol/v1
 llm_api_key: ""
 prompts_file: prompts.toml
 https_proxy:
-llm_model: glm-4.6v-flash
+llm_model: qwen3.6-flash
 #如果相机放在臂对面，就写为true
 RotationCam2Arm: true
 
 # grasp_by_instruction 检测后端: llm | yolo 默认yolo，如果你要用大模型做检测，就改为llm
-instruction_detect_backend: yolo
+instruction_detect_backend: llm
 
 #YOLO模型路径和置信度
 classification_YOLO_model_path:
@@ -83,3 +83,8 @@ place_pos:
 place_distance_threshold: 0.05
 #为防止夹爪撞上块而进行的偏移量，单位m
 catch_offset: 0.01
+
+# dev 调试：为 true 时在抓取 skill 执行过程中显示检测画面（YOLO / LLM 分窗口）
+dev: true
+# WSL / 无 GUI 时可设端口（如 8765），浏览器访问 http://<host>:8765/ 查看；留空则用本地 OpenCV 窗口
+cv2_headless_port:

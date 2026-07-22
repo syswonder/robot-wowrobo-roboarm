@@ -1,13 +1,37 @@
-"""YOLO 检测 + 分类抓取逻辑（与 tools/lib/grasp_pipeline 对齐）。"""
+"""YOLO 检测 + 分类抓取逻辑（roboarm_grasp skill）。"""
 
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 from roboarm_core.arm.arm_base import Arm
-from roboarm_core.config import get_config_value
+from roboarm_core.config import get_config_value, resolve_asset
+from roboarm_core.vision.detect_viz import show_yolo_detection
+from roboarm_core.vision.yolo_detect import detect_objects_in_frame, load_model
+
+Detection = tuple[tuple[float, float, float, float, float], float, int, str]
+
+
+def load_yolo_models() -> list[Any]:
+    model_paths = [
+        resolve_asset(path)
+        for path in get_config_value("classification_YOLO_model_path", [])
+    ]
+    if not model_paths:
+        raise RuntimeError("classification_YOLO_model_path 未配置")
+    return [load_model(str(path)) for path in model_paths]
+
+
+def detect_all(models: list[Any], frame: np.ndarray) -> list[Detection]:
+    conf_thres = get_config_value("default_conf_thres")
+    detections: list[Detection] = []
+    for model in models:
+        detections.extend(
+            detect_objects_in_frame(model, frame, conf_thres=conf_thres)
+        )
+    return detections
 
 
 def _resolve_place_pos(
@@ -29,14 +53,14 @@ def _resolve_place_pos(
             class_place_pos[index] = target_y
         elif ref == "-y":
             class_place_pos[index] = -target_y
-    return [float(v) for v in class_place_pos]
+    return [float(value) for value in class_place_pos]
 
 
 def grasp_detections(
     arm: Arm,
-    detections: list,
+    detections: list[Detection],
     *,
-    on_progress: Callable[[str], None] | None = None,
+    on_progress: Any | None = None,
 ) -> tuple[int, int, list[str]]:
     place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
     place_distance_threshold = float(
@@ -94,3 +118,13 @@ def move_gripper_aside(arm: Arm) -> None:
     aside = get_config_value("default_gripper_aside_pos", raise_if_missing=False)
     if aside:
         arm.move_to(aside, 1, block_until_reach=True)
+
+
+def run_classify_yolo_detection(frame: np.ndarray) -> list[Detection]:
+    detections = detect_all(load_yolo_models(), frame)
+    show_yolo_detection(
+        frame,
+        detections,
+        status_lines=[f"detected: {len(detections)}"],
+    )
+    return detections

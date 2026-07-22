@@ -12,6 +12,7 @@ from pydantic import TypeAdapter
 from roboarm_core.config import get_config_value, resolve_asset
 from roboarm_core.llm.dataclass import DetectedBox, DetectedFromLLM
 from roboarm_core.llm.llm_detect import LLMDetect, json2box
+from roboarm_core.vision.detect_viz import show_llm_detection, show_yolo_detection
 from roboarm_core.vision.yolo_detect import detect_objects_in_frame, load_model
 
 _YOLO_MODELS: dict[str, Any] = {}
@@ -226,6 +227,12 @@ def _catch_by_instruction_llm(
                         queue_output=queue_output,
                     )
                 )
+        status = ["instruction: " + instruction]
+        if boxes:
+            status.append(f"detected: {len(boxes)}")
+        elif not done:
+            status.append("waiting for LLM...")
+        show_llm_detection(frame, boxes, status_lines=status)
         if done:
             break
     return boxes, results
@@ -239,6 +246,14 @@ def _catch_by_instruction_yolo(
 ) -> tuple[list[DetectedBox], list[bool]]:
     detections = _run_yolo_detections(frame)
     boxes = _select_yolo_boxes(detections, instruction)
+    show_yolo_detection(
+        frame,
+        detections,
+        status_lines=[
+            f"instruction: {instruction}",
+            f"selected: {len(boxes)} / {len(detections)}",
+        ],
+    )
     place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
     offset = get_config_value("catch_offset")
     results: list[bool] = []

@@ -40,6 +40,8 @@ system:
     log: info
   memory: []
 
+
+
 primitive:
   - name: roboarm_arm
     path: primitives/roboarm_arm
@@ -49,14 +51,11 @@ primitive:
       #机械臂模式，real为真机，sim为模拟
       arm_backend: real
       arm_offset:
-        - -6.55
-        - -23.47
-        - -36.57
-        - -76.88
-        - -3.03
-      robot_id: koch_follower
-      publish_rate_hz: 40
-      end_pose_frame: base_link
+        - -2.51
+        - -20.88
+        - -22.77
+        - -79.47
+        - -1.80
       joint_names:
         - joint1
         - joint2
@@ -123,11 +122,11 @@ skill:
       arm_provider_id: roboarm_arm
       camera_provider_id: orbbec_camera_roboarm
       arm_offset:
-        - -5.58
-        - -21.45
-        - -36.84
-        - -73.54
-        - 2.42
+        - -2.51
+        - -20.88
+        - -22.77
+        - -79.47
+        - -1.80
       joint_names:
         - joint1
         - joint2

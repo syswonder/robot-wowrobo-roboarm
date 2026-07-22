@@ -13,6 +13,7 @@ from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
 from lib.paths import calibration_dir, hand_eye_matrix_path, urdf_path
+from lib.lerobot_bus_resilience import apply_unstable_serial_patches
 
 from lerobot.robots.koch_follower import config_koch_follower, koch_follower
 
@@ -55,6 +56,13 @@ class LeroboArm(Arm):
                 id=robot_id,
                 calibration_dir=Path(calibration_dir()).resolve(),
             )
+        )
+        apply_unstable_serial_patches(
+            self.arm.bus,
+            num_retry=int(get_config_value("arm_comm_retry", 10, raise_if_missing=False)),
+            retry_delay_s=float(
+                get_config_value("arm_comm_retry_delay_s", 0.05, raise_if_missing=False)
+            ),
         )
         try:
             self.arm.connect()
