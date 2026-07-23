@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import copy
+import logging
 import time
 from queue import Queue
 from typing import Any, Callable, Optional
@@ -11,9 +11,13 @@ from pydantic import TypeAdapter
 
 from roboarm_core.config import get_config_value, resolve_asset
 from roboarm_core.llm.dataclass import DetectedBox, DetectedFromLLM
-from roboarm_core.llm.llm_detect import LLMDetect, json2box
+from roboarm_core.llm.llm_detect import LLMDetect
+from roboarm_core.place_pos import resolve_place_pos
 from roboarm_core.vision.detect_viz import show_llm_detection, show_yolo_detection
+from roboarm_core.vision.mobile_sam_refine import RefineResult, SamRefineDebug, refine_llm_json_to_box
 from roboarm_core.vision.yolo_detect import detect_objects_in_frame, load_model
+
+log = logging.getLogger("roboarm_grasp.catch_by_llm")
 
 _YOLO_MODELS: dict[str, Any] = {}
 
@@ -119,44 +123,13 @@ def _select_yolo_boxes(
     return [box for score, box in scored if score >= best_score]
 
 
-def _resolve_class_place_pos(
-    box: DetectedBox,
-    place_pos: dict,
-    *,
-    target_x: float,
-    target_y: float,
-) -> list[float | int]:
-    class_place_pos_data = place_pos.get(box.class_name)
-    if class_place_pos_data is None or "pos" not in class_place_pos_data:
-        for pos_data in place_pos.values():
-            for keyword in pos_data.get("keywords", []):
-                if keyword.lower() in box.class_name.lower():
-                    class_place_pos_data = pos_data
-                    break
-            if class_place_pos_data is not None:
-                break
-    if class_place_pos_data is None or "pos" not in class_place_pos_data:
-        return [target_x, target_y]
-
-    class_place_pos = copy.deepcopy(class_place_pos_data["pos"])
-    for index, ref in enumerate(class_place_pos):
-        if ref == "x":
-            class_place_pos[index] = target_x
-        elif ref == "-x":
-            class_place_pos[index] = -target_x
-        elif ref == "y":
-            class_place_pos[index] = target_y
-        elif ref == "-y":
-            class_place_pos[index] = -target_y
-    return class_place_pos
-
-
 def _grasp_box(
     arm: Any,
     box: DetectedBox,
     *,
     offset: float,
     place_pos: dict,
+    instruction: str,
     queue_output: Queue,
 ) -> bool:
     queue_output.put(box)
@@ -168,9 +141,10 @@ def _grasp_box(
         box.box_height,
         box.box_rotation_deg,
     )
-    class_place_pos = _resolve_class_place_pos(
-        box,
-        place_pos,
+    class_place_pos = resolve_place_pos(
+        box.class_name,
+        instruction=instruction,
+        place_pos=place_pos,
         target_x=target_x,
         target_y=target_y,
     )
@@ -196,6 +170,7 @@ def _catch_by_instruction_llm(
     instruction: str,
     queue_output: Queue,
     arm: Any,
+    save_path: str | None = None,
 ) -> tuple[list[DetectedBox], list[bool]]:
     llm_detect = LLMDetect()
     response_task = llm_detect.detect_frame(
@@ -206,6 +181,7 @@ def _catch_by_instruction_llm(
     )
     boxes: list[DetectedBox] = []
     results: list[bool] = []
+    sam_debug_list: list[SamRefineDebug] = []
     if not response_task:
         return boxes, results
 
@@ -215,7 +191,15 @@ def _catch_by_instruction_llm(
     while True:
         response, done = llm_detect.llm_api.await_task(response_task, blocking=False)
         if response:
-            box = json2box(response, img_w=frame.shape[1], img_h=frame.shape[0])
+            refine_result: RefineResult = refine_llm_json_to_box(
+                frame,
+                response,
+                img_w=frame.shape[1],
+                img_h=frame.shape[0],
+            )
+            if refine_result.sam_debug is not None:
+                sam_debug_list.append(refine_result.sam_debug)
+            box = refine_result.box
             if box:
                 boxes.append(box)
                 results.append(
@@ -224,15 +208,22 @@ def _catch_by_instruction_llm(
                         box,
                         offset=offset,
                         place_pos=place_pos,
+                        instruction=instruction,
                         queue_output=queue_output,
                     )
                 )
         status = ["instruction: " + instruction]
         if boxes:
-            status.append(f"detected: {len(boxes)}")
+            status.append(f"detected: {len(boxes)} (MobileSAM refined)")
         elif not done:
             status.append("waiting for LLM...")
-        show_llm_detection(frame, boxes, status_lines=status)
+        show_llm_detection(
+            frame,
+            boxes,
+            sam_debug_list=sam_debug_list or None,
+            status_lines=status,
+            save_path=save_path,
+        )
         if done:
             break
     return boxes, results
@@ -243,6 +234,7 @@ def _catch_by_instruction_yolo(
     instruction: str,
     queue_output: Queue,
     arm: Any,
+    save_path: str | None = None,
 ) -> tuple[list[DetectedBox], list[bool]]:
     detections = _run_yolo_detections(frame)
     boxes = _select_yolo_boxes(detections, instruction)
@@ -253,6 +245,7 @@ def _catch_by_instruction_yolo(
             f"instruction: {instruction}",
             f"selected: {len(boxes)} / {len(detections)}",
         ],
+        save_path=save_path,
     )
     place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
     offset = get_config_value("catch_offset")
@@ -264,11 +257,17 @@ def _catch_by_instruction_yolo(
                 box,
                 offset=offset,
                 place_pos=place_pos,
+                instruction=instruction,
                 queue_output=queue_output,
             )
         )
     return boxes, results
 
+def _get_save_path() -> str:
+    save_flag = get_config_value("save_img", raise_if_missing=False)
+    if save_flag:
+        return "../../grasp_debug.jpg"
+    return None
 
 def catch_by_instruction(
     frame: cv2.typing.MatLike,
@@ -283,21 +282,22 @@ def catch_by_instruction(
     backend = _get_instruction_detect_backend()
     boxes: list[DetectedBox] = []
     grasp_results: list[bool] = []
+    save_path = _get_save_path()
 
     try:
         _prepare_arm_for_grasp(arm)
         if backend == "yolo":
             boxes, grasp_results = _catch_by_instruction_yolo(
-                frame, instruction, queue_output, arm
+                frame, instruction, queue_output, arm, save_path
             )
         else:
             boxes, grasp_results = _catch_by_instruction_llm(
-                frame, instruction, queue_output, arm
+                frame, instruction, queue_output, arm, save_path
             )
         if any(grasp_results) and success_callback:
             success_callback()
     except Exception as exc:
-        print("Exception:", exc)
+        log.error("catch_by_instruction 异常: %s", exc, exc_info=True)
         return {
             "status": "failed",
             "reason": str(exc),

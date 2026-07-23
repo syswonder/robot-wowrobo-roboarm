@@ -8,3 +8,5 @@ pydantic
 toml
 pyyaml
 Pillow
+torch
+torchvision

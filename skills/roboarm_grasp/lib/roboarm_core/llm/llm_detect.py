@@ -11,16 +11,11 @@ from typing import Any
 import cv2
 import numpy as np
 from openai.types.chat.chat_completion import ChatCompletion
-from PIL import Image, ImageDraw
 from pydantic import TypeAdapter
 
 from roboarm_core.config import get_config_value
 from roboarm_core.llm.dataclass import DetectedBox, DetectedFromLLM
-from roboarm_core.llm.llm_api import (
-    LLMAPI,
-    extract_json_from_markdown,
-    font,
-)
+from roboarm_core.llm.llm_api import LLMAPI, extract_json_from_markdown
 
 BATCH_SIZE = 1
 
@@ -134,18 +129,27 @@ def draw_boxes_on_frame(
     frame: cv2.typing.MatLike,
 ) -> cv2.typing.MatLike:
     annotated_frame = frame.copy()
-    pil_img = Image.fromarray(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB))
-    draw = ImageDraw.Draw(pil_img)
     for box in boxes:
-        x_center, y_center = box.box_center_x, box.box_center_y
-        width_box, height_box = box.box_width, box.box_height
-        x1 = int(x_center - width_box / 2)
-        y1 = int(y_center - height_box / 2)
-        x2 = int(x_center + width_box / 2)
-        y2 = int(y_center + height_box / 2)
-        draw.rectangle([x1, y1, x2, y2], outline="red", width=2)
-        draw.text((x1, y1 - 20), box.class_name, fill="red", font=font)
-    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        box_points = cv2.boxPoints(
+            (
+                (float(box.box_center_x), float(box.box_center_y)),
+                (float(box.box_width), float(box.box_height)),
+                float(box.box_rotation_deg),
+            )
+        )
+        box_points = np.int64(box_points)
+        cv2.drawContours(annotated_frame, [box_points], 0, (0, 0, 255), 2)
+        x1, y1 = box_points.min(axis=0)
+        cv2.putText(
+            annotated_frame,
+            box.class_name,
+            (int(x1), max(int(y1) - 8, 0)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 255),
+            2,
+        )
+    return annotated_frame
 
 
 def json2box(json_str: str, img_w: int, img_h: int) -> DetectedBox | None:

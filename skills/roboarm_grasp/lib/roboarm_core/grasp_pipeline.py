@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import copy
 from typing import Any
 
 import numpy as np
 from roboarm_core.arm.arm_base import Arm
 from roboarm_core.config import get_config_value, resolve_asset
+from roboarm_core.place_pos import resolve_place_pos
 from roboarm_core.vision.detect_viz import show_yolo_detection
 from roboarm_core.vision.yolo_detect import detect_objects_in_frame, load_model
 
@@ -34,28 +34,6 @@ def detect_all(models: list[Any], frame: np.ndarray) -> list[Detection]:
     return detections
 
 
-def _resolve_place_pos(
-    class_name: str,
-    place_pos: dict[str, Any],
-    target_x: float,
-    target_y: float,
-) -> list[float]:
-    class_place_pos_data = place_pos.get(class_name)
-    if class_place_pos_data is None or "pos" not in class_place_pos_data:
-        return [target_x, target_y]
-    class_place_pos = copy.deepcopy(class_place_pos_data["pos"])
-    for index, ref in enumerate(class_place_pos):
-        if ref == "x":
-            class_place_pos[index] = target_x
-        elif ref == "-x":
-            class_place_pos[index] = -target_x
-        elif ref == "y":
-            class_place_pos[index] = target_y
-        elif ref == "-y":
-            class_place_pos[index] = -target_y
-    return [float(value) for value in class_place_pos]
-
-
 def grasp_detections(
     arm: Arm,
     detections: list[Detection],
@@ -75,8 +53,11 @@ def grasp_detections(
         angle_deg = float(np.rad2deg(r))
         target_x, target_y = arm.pixel2pos(u, v)
         gripper_angle_rad = arm.gripper_angle_by_longer(u, v, w, h, angle_deg)
-        class_place_pos = _resolve_place_pos(
-            class_name, place_pos, target_x, target_y
+        class_place_pos = resolve_place_pos(
+            class_name,
+            place_pos=place_pos,
+            target_x=target_x,
+            target_y=target_y,
         )
 
         if (
@@ -119,12 +100,19 @@ def move_gripper_aside(arm: Arm) -> None:
     if aside:
         arm.move_to(aside, 1, block_until_reach=True)
 
+def _get_save_path() -> str:
+    save_flag = get_config_value("save_img", raise_if_missing=False)
+    if save_flag:
+        return "../../grasp_debug.jpg"
+    return None
 
 def run_classify_yolo_detection(frame: np.ndarray) -> list[Detection]:
     detections = detect_all(load_yolo_models(), frame)
+    save_path = _get_save_path()
     show_yolo_detection(
         frame,
         detections,
         status_lines=[f"detected: {len(detections)}"],
+        save_path=save_path,
     )
     return detections

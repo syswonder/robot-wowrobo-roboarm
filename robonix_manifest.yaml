@@ -91,29 +91,21 @@ primitive:
       #如果设备连不上还想启动robonix，改为true
       allow_missing_hardware: false
     
-  - name: audio_driver
-    url: https://github.com/syswonder/primitive-audio-driver-rbnx
-    branch: main
-    config:
-      mic_device: default
-      speaker_device: default
+#   - name: audio_driver
+#     url: https://github.com/syswonder/primitive-audio-driver-rbnx
+#     branch: main
+#     config:
+#       mic_device: default
+#       speaker_device: default
 
-  # - name: audio_client_bridge
-  #   url: https://github.com/syswonder/primitive-audio-client-bridge-rbnx
-  #   branch: main
-  #   config:
-  #     transport: reverse
-  #     listen_host: 0.0.0.0
-  #     listen_port: 60002
-
-service: 
-  - name: speech
-    path: ${ROBONIX_SOURCE_PATH}/services/speech
-    config:
-      speech_backend: tencent
-      default_speaker_provider_id: audio_driver
-      tencent_asr_appid: ${TENCENT_ASR_APPID}
-      tencent_asr_engine: 16k_zh
+# service: 
+#   - name: speech
+#     path: ${ROBONIX_SOURCE_PATH}/services/speech
+#     config:
+#       speech_backend: tencent
+#       default_speaker_provider_id: audio_driver
+#       tencent_asr_appid: ${TENCENT_ASR_APPID}
+#       tencent_asr_engine: 16k_zh
 
 skill:
   - name: roboarm_grasp

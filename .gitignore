@@ -9,3 +9,6 @@ start.md
 TEST.md
 **/*:Zone.Identifier
 *.Zone.Identifier
+MobileSAM/
+*.pt
+grasp_debug.jpg

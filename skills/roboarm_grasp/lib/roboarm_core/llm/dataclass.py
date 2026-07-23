@@ -4,6 +4,17 @@ from typing import Optional
 from roboarm_core.config import get_config_value
 
 
+def normalize_box_rotation_deg(angle_deg: float) -> float:
+    angle = float(angle_deg) % 360.0
+    if angle > 180.0:
+        angle -= 360.0
+    if angle > 90.0:
+        angle -= 180.0
+    elif angle < -90.0:
+        angle += 180.0
+    return angle
+
+
 @dataclass
 class DetectedFromLLM:
     id: int
@@ -29,7 +40,6 @@ class DetectedFromLLM:
         img_w: int,
         img_h: int,
         confidence: Optional[float] = None,
-        box_rotation_deg: float = 0.0,
     ) -> "DetectedBox":
         if not self.is_valid():
             raise ValueError("Invalid box parameters, cannot convert to DetectedBox.")
@@ -44,7 +54,7 @@ class DetectedFromLLM:
             box_center_y=cy,
             box_width=round(self.box_width * img_w),
             box_height=round(self.box_height * img_h),
-            box_rotation_deg=box_rotation_deg,
+            box_rotation_deg=0.0,
             confidence=confidence,
         )
 
