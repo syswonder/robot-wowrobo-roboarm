@@ -95,17 +95,15 @@ rbnx chat
 ```
 测试catch by instruction
 
-## 最新改动：
-对大模型抓取技能进行了大调整，现在依靠VLM识别物体坐标，通过mobileSAM切割物体，
-并用minAreaRect算法得到物体中心点坐标和偏转角
+## dev模式下的可视化：
 
-
-在使用时，需要安装[MobileSAM](https://github.com/ChaoningZhang/MobileSAM)
-并下载SAM模型文件[mobile_sam.pt](https://github.com/ChaoningZhang/MobileSAM)放置到skills\roboarm_grasp\assets\models\mobile_sam目录下
 | 元素 | 颜色 | 含义 |
 | :--- | :--- | :--- |
+| ---- | --LLM-- | ---- |
 | 半透明区域 | 青色 | SAM分割掩码 |
 | 旋转矩形 | 绿色 | cv2.minAreaRect |
 | 圆点 | 蓝色 | LLM 提示点 |
 | 矩形 | 蓝色细框 | LLM 预测的物体框 |
 | 旋转矩形 | 红色 | 最终抓取框（SAM 精化后） |
+| ---- | --YOLO-- | ---- |
+| 矩形框 | 红色 | YOLO识别框 |

@@ -122,3 +122,7 @@ python classify_and_grasp.py --once
 ```bash
 TOOLS_CONFIG=config.yaml python classify_and_grasp.py
 ```
+
+**8.安装Mobile SAM**
+根据指示安装[MobileSAM](https://github.com/ChaoningZhang/MobileSAM)
+并下载SAM模型文件[mobile_sam.pt](https://github.com/ChaoningZhang/MobileSAM)放置到skills\roboarm_grasp\assets\models\mobile_sam目录下
