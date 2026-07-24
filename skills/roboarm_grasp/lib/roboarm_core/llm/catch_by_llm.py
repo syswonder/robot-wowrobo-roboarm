@@ -10,11 +10,16 @@ import numpy as np
 from pydantic import TypeAdapter
 
 from roboarm_core.config import get_config_value, resolve_asset
-from roboarm_core.llm.dataclass import DetectedBox, DetectedFromLLM
+from roboarm_core.llm.dataclass import DetectedBox, DetectedFromLLM, InstructionDetectResponse
 from roboarm_core.llm.llm_detect import LLMDetect
 from roboarm_core.place_pos import resolve_place_pos
 from roboarm_core.vision.detect_viz import show_llm_detection, show_yolo_detection
-from roboarm_core.vision.mobile_sam_refine import RefineResult, SamRefineDebug, refine_llm_json_to_box
+from roboarm_core.vision.mobile_sam_refine import (
+    RefineResult,
+    SamRefineDebug,
+    parse_llm_detections,
+    refine_detection,
+)
 from roboarm_core.vision.yolo_detect import detect_objects_in_frame, load_model
 
 log = logging.getLogger("roboarm_grasp.catch_by_llm")
@@ -60,6 +65,19 @@ def _run_yolo_detections(frame: cv2.typing.MatLike) -> list[tuple]:
     return detections
 
 
+def _yolo_tuple_to_detected_from_llm(detection: tuple, frame: cv2.typing.MatLike) -> DetectedFromLLM:
+    (u, v, w, h, _r), _score, _class_id, class_name = detection
+    img_h, img_w = frame.shape[:2]
+    return DetectedFromLLM(
+        id=0,
+        class_name=class_name,
+        box_center_x=float(u) / img_w,
+        box_center_y=float(v) / img_h,
+        box_width=float(w) / img_w,
+        box_height=float(h) / img_h,
+    )
+
+
 def _yolo_tuple_to_box(detection: tuple) -> DetectedBox:
     (u, v, w, h, r), score, _class_id, class_name = detection
     return DetectedBox(
@@ -101,26 +119,33 @@ def _score_detection_for_instruction(
     return score
 
 
-def _select_yolo_boxes(
+def _select_yolo_detections(
     detections: list[tuple],
     instruction: str,
-) -> list[DetectedBox]:
+) -> list[tuple]:
     if not detections:
         return []
-    boxes = [_yolo_tuple_to_box(det) for det in detections]
     if _instruction_implies_all(instruction):
-        return boxes
+        return detections
     place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
     scored = [
-        (_score_detection_for_instruction(box.class_name, instruction, place_pos), box)
-        for box in boxes
+        (
+            _score_detection_for_instruction(
+                _yolo_tuple_to_box(det).class_name, instruction, place_pos
+            ),
+            det,
+        )
+        for det in detections
     ]
     scored.sort(key=lambda item: item[0], reverse=True)
     if scored[0][0] <= 0:
-        best = max(boxes, key=lambda box: box.confidence or 0.0)
-        return [best]
+        best_det = max(
+            detections,
+            key=lambda det: _yolo_tuple_to_box(det).confidence or 0.0,
+        )
+        return [best_det]
     best_score = scored[0][0]
-    return [box for score, box in scored if score >= best_score]
+    return [det for score, det in scored if score >= best_score]
 
 
 def _grasp_box(
@@ -165,6 +190,48 @@ def _prepare_arm_for_grasp(arm: Any) -> None:
     time.sleep(0.5)
 
 
+def _refine_and_grasp_detections(
+    frame: cv2.typing.MatLike,
+    detections: list[DetectedFromLLM],
+    *,
+    arm: Any,
+    offset: float,
+    place_pos: dict,
+    instruction: str,
+    queue_output: Queue,
+) -> tuple[list[DetectedBox], list[bool], list[SamRefineDebug]]:
+    boxes: list[DetectedBox] = []
+    results: list[bool] = []
+    sam_debug_list: list[SamRefineDebug] = []
+    img_w, img_h = frame.shape[1], frame.shape[0]
+
+    for detection in detections:
+        refine_result: RefineResult = refine_detection(
+            frame,
+            detection,
+            img_w=img_w,
+            img_h=img_h,
+        )
+        if refine_result.sam_debug is not None:
+            sam_debug_list.append(refine_result.sam_debug)
+        box = refine_result.box
+        if not box:
+            results.append(False)
+            continue
+        boxes.append(box)
+        results.append(
+            _grasp_box(
+                arm,
+                box,
+                offset=offset,
+                place_pos=place_pos,
+                instruction=instruction,
+                queue_output=queue_output,
+            )
+        )
+    return boxes, results, sam_debug_list
+
+
 def _catch_by_instruction_llm(
     frame: cv2.typing.MatLike,
     instruction: str,
@@ -177,7 +244,7 @@ def _catch_by_instruction_llm(
         frame,
         prompt_key="user_instruction_prompt",
         replace_map={"{user_instruction}": instruction},
-        schema=TypeAdapter(DetectedFromLLM).json_schema(),
+        schema=TypeAdapter(InstructionDetectResponse).json_schema(),
     )
     boxes: list[DetectedBox] = []
     results: list[bool] = []
@@ -187,36 +254,31 @@ def _catch_by_instruction_llm(
 
     place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
     offset = get_config_value("catch_offset")
+    processed = False
 
     while True:
         response, done = llm_detect.llm_api.await_task(response_task, blocking=False)
-        if response:
-            refine_result: RefineResult = refine_llm_json_to_box(
+        if response and not processed:
+            detections = parse_llm_detections(response)
+            boxes, results, sam_debug_list = _refine_and_grasp_detections(
                 frame,
-                response,
-                img_w=frame.shape[1],
-                img_h=frame.shape[0],
+                detections,
+                arm=arm,
+                offset=offset,
+                place_pos=place_pos,
+                instruction=instruction,
+                queue_output=queue_output,
             )
-            if refine_result.sam_debug is not None:
-                sam_debug_list.append(refine_result.sam_debug)
-            box = refine_result.box
-            if box:
-                boxes.append(box)
-                results.append(
-                    _grasp_box(
-                        arm,
-                        box,
-                        offset=offset,
-                        place_pos=place_pos,
-                        instruction=instruction,
-                        queue_output=queue_output,
-                    )
-                )
+            processed = True
         status = ["instruction: " + instruction]
         if boxes:
-            status.append(f"detected: {len(boxes)} (MobileSAM refined)")
+            status.append(
+                f"detected: {len(boxes)} grasped/refined (MobileSAM per object)"
+            )
         elif not done:
             status.append("waiting for LLM...")
+        elif processed:
+            status.append("no valid targets after refine")
         show_llm_detection(
             frame,
             boxes,
@@ -237,30 +299,34 @@ def _catch_by_instruction_yolo(
     save_path: str | None = None,
 ) -> tuple[list[DetectedBox], list[bool]]:
     detections = _run_yolo_detections(frame)
-    boxes = _select_yolo_boxes(detections, instruction)
+    selected_dets = _select_yolo_detections(detections, instruction)
     show_yolo_detection(
         frame,
         detections,
         status_lines=[
             f"instruction: {instruction}",
-            f"selected: {len(boxes)} / {len(detections)}",
+            f"selected: {len(selected_dets)} / {len(detections)}",
         ],
         save_path=save_path,
     )
     place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
     offset = get_config_value("catch_offset")
-    results: list[bool] = []
-    for box in boxes:
-        results.append(
-            _grasp_box(
-                arm,
-                box,
-                offset=offset,
-                place_pos=place_pos,
-                instruction=instruction,
-                queue_output=queue_output,
-            )
-        )
+
+    llm_detections: list[DetectedFromLLM] = []
+    for index, det in enumerate(selected_dets, start=1):
+        item = _yolo_tuple_to_detected_from_llm(det, frame)
+        item.id = index
+        llm_detections.append(item)
+
+    boxes, results, _sam_debug = _refine_and_grasp_detections(
+        frame,
+        llm_detections,
+        arm=arm,
+        offset=offset,
+        place_pos=place_pos,
+        instruction=instruction,
+        queue_output=queue_output,
+    )
     return boxes, results
 
 def _get_save_path() -> str:

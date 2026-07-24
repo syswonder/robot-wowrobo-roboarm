@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""roboarm_grasp — 通过 Atlas 调用机械臂/相机原语，封装积木分类与 LLM 抓取。"""
+"""roboarm_grasp — 通过 Atlas 调用机械臂/相机原语，封装分类编排与指令抓取。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ import numpy as np
 from robonix_api import ATLAS, Err, Ok, Skill
 from roboarm_core.arm.robonix_arm import RobonixArm
 from roboarm_core.config import init_config
-from roboarm_core.grasp_pipeline import grasp_detections, move_gripper_aside, run_classify_yolo_detection
 from roboarm_core.llm.catch_by_llm import catch_by_instruction
 from roboarm_core.cv2_display import destroy_all_windows
 from roboarm_core.vision.detect_viz import is_dev_mode
@@ -198,35 +197,67 @@ except ImportError:  # pragma: no cover
     String = None  # type: ignore
 
 
+def _format_grasp_result(instruction: str, result: dict[str, Any]) -> tuple[bool, str]:
+    success = result.get("status") == "success" and result.get("grasp_success")
+    target = result.get("target", "")
+    method = result.get("method", "llm")
+    msg = (
+        f"检测: {method}; 指令: {instruction}; 目标: {target or '无'}; "
+        f"结果: {result.get('status')}"
+    )
+    if result.get("detected_count") is not None:
+        msg += (
+            f"; 检测 {result['detected_count']} 个，"
+            f"成功抓取 {result.get('grasped_count', 0)} 个"
+        )
+    if result.get("reason"):
+        msg += f"; {result['reason']}"
+    return bool(success), msg
+
+
+def _execute_grasp_by_instruction(instruction: str) -> tuple[bool, str]:
+    from queue import Queue
+
+    if _arm is None:
+        raise RuntimeError("skill is not activated")
+
+    frame = _get_bgr_frame()
+    if frame is None:
+        return False, "无法获取相机画面"
+
+    result = catch_by_instruction(frame, instruction, Queue(), arm=_arm)
+    return _format_grasp_result(instruction, result)
+
+
 if ClassifyAndGrasp_Request is not None:
 
     @skill.mcp("robonix/skill/roboarm_grasp/classify_and_grasp")
-    def classify_and_grasp(_req: ClassifyAndGrasp_Request) -> ClassifyAndGrasp_Response:
-        if _arm is None:
-            raise RuntimeError("skill is not activated")
-
-        frame = _get_bgr_frame()
-        if frame is None:
+    def classify_and_grasp(
+        req: ClassifyAndGrasp_Request,
+    ) -> ClassifyAndGrasp_Response:
+        categories = [
+            (item.data or "").strip()
+            for item in (req.categories or [])
+            if (item.data or "").strip()
+        ]
+        if not categories:
             return ClassifyAndGrasp_Response(
                 success=False,
-                message=String(data="无法获取相机画面"),
+                message=String(data="categories 不能为空"),
             )
 
-        move_gripper_aside(_arm)
-        detections = run_classify_yolo_detection(frame)
+        all_ok = True
+        details: list[str] = []
+        for category in categories:
+            instruction = f"抓取所有{category}"
+            ok, msg = _execute_grasp_by_instruction(instruction)
+            details.append(f"{category}: {'OK' if ok else 'FAIL'} ({msg})")
+            if not ok:
+                all_ok = False
 
-        if not detections:
-            return ClassifyAndGrasp_Response(
-                success=True,
-                message=String(data="未检测到目标"),
-            )
-
-        ok_n, fail_n, details = grasp_detections(_arm, detections)
-        summary = f"检测 {len(detections)} 个，成功 {ok_n}，失败 {fail_n}； " + "; ".join(
-            details
-        )
+        summary = f"分类 {len(categories)} 类； " + "; ".join(details)
         return ClassifyAndGrasp_Response(
-            success=fail_n == 0 and ok_n > 0,
+            success=all_ok,
             message=String(data=summary),
         )
 
@@ -237,8 +268,6 @@ if GraspByInstruction_Request is not None:
     def grasp_by_instruction_tool(
         req: GraspByInstruction_Request,
     ) -> GraspByInstruction_Response:
-        from queue import Queue
-
         if _arm is None:
             raise RuntimeError("skill is not activated")
 
@@ -249,30 +278,9 @@ if GraspByInstruction_Request is not None:
                 message=String(data="instruction 不能为空"),
             )
 
-        frame = _get_bgr_frame()
-        if frame is None:
-            return GraspByInstruction_Response(
-                success=False,
-                message=String(data="无法获取相机画面"),
-            )
-
-        result = catch_by_instruction(frame, instruction, Queue(), arm=_arm)
-        success = result.get("status") == "success" and result.get("grasp_success")
-        target = result.get("target", "")
-        method = result.get("method", "llm")
-        msg = (
-            f"检测: {method}; 指令: {instruction}; 目标: {target or '无'}; "
-            f"结果: {result.get('status')}"
-        )
-        if result.get("detected_count") is not None:
-            msg += (
-                f"; 检测 {result['detected_count']} 个，"
-                f"成功抓取 {result.get('grasped_count', 0)} 个"
-            )
-        if result.get("reason"):
-            msg += f"; {result['reason']}"
+        ok, msg = _execute_grasp_by_instruction(instruction)
         return GraspByInstruction_Response(
-            success=bool(success),
+            success=ok,
             message=String(data=msg),
         )
 

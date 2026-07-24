@@ -153,11 +153,24 @@ def draw_boxes_on_frame(
 
 
 def json2box(json_str: str, img_w: int, img_h: int) -> DetectedBox | None:
-    try:
-        box: DetectedFromLLM = TypeAdapter(DetectedFromLLM).validate_json(
-            extract_json_from_markdown(json_str)
-        )
-    except Exception as exc:
-        print(f"解析/校验 JSON 失败: {exc}")
+    from roboarm_core.vision.mobile_sam_refine import parse_llm_detections
+
+    detections = parse_llm_detections(json_str)
+    if not detections:
         return None
-    return box.to_detected_box(img_w, img_h) if box.is_valid() else None
+    try:
+        return detections[0].to_detected_box(img_w, img_h)
+    except ValueError:
+        return None
+
+
+def json2boxes(json_str: str, img_w: int, img_h: int) -> list[DetectedBox]:
+    from roboarm_core.vision.mobile_sam_refine import parse_llm_detections
+
+    boxes: list[DetectedBox] = []
+    for detection in parse_llm_detections(json_str):
+        try:
+            boxes.append(detection.to_detected_box(img_w, img_h))
+        except ValueError:
+            continue
+    return boxes

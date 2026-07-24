@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from pydantic import BaseModel, Field
+
 from roboarm_core.config import get_config_value
 
 
@@ -57,6 +59,35 @@ class DetectedFromLLM:
             box_rotation_deg=0.0,
             confidence=confidence,
         )
+
+
+class DetectedItem(BaseModel):
+    """单个检测目标（用于 LLM JSON schema）。"""
+
+    id: int
+    class_name: str
+    box_center_x: float = Field(ge=0.0, le=1.0)
+    box_center_y: float = Field(ge=0.0, le=1.0)
+    box_width: float = Field(ge=0.0, le=1.0)
+    box_height: float = Field(ge=0.0, le=1.0)
+
+    def to_detected_from_llm(self) -> "DetectedFromLLM":
+        return DetectedFromLLM(
+            id=self.id,
+            class_name=self.class_name,
+            box_center_x=self.box_center_x,
+            box_center_y=self.box_center_y,
+            box_width=self.box_width,
+            box_height=self.box_height,
+        )
+
+
+class InstructionDetectResponse(BaseModel):
+    """user_instruction_prompt 的结构化输出。"""
+
+    thinking_process: str = ""
+    failed: bool = False
+    objects: list[DetectedItem] = Field(default_factory=list)
 
 
 @dataclass

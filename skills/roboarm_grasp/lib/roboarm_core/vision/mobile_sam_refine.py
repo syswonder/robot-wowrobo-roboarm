@@ -253,30 +253,92 @@ def refine_detection_with_mobile_sam(
         return RefineResult(box=None, sam_debug=debug)
 
 
-def parse_llm_detection(json_str: str) -> DetectedFromLLM | None:
+def parse_llm_detections(json_str: str) -> list[DetectedFromLLM]:
+    """解析 LLM 返回的多目标 JSON（数组或 objects 包装格式）。"""
     try:
         raw = json.loads(extract_json_from_markdown(json_str))
     except Exception as exc:
         log.error("解析 LLM JSON 失败: %s", exc, exc_info=True)
-        return None
+        return []
 
-    if isinstance(raw, dict) and raw.get("failed"):
-        log.info(
-            "LLM 返回 failed=true: %s",
-            raw.get("thinking_process", "未找到目标"),
+    items: list[Any]
+    if isinstance(raw, list):
+        items = raw
+    elif isinstance(raw, dict):
+        if raw.get("failed"):
+            log.info(
+                "LLM 返回 failed=true: %s",
+                raw.get("thinking_process", "未找到目标"),
+            )
+            return []
+        if "objects" in raw:
+            items = raw.get("objects") or []
+        elif "box_center_x" in raw:
+            items = [raw]
+        else:
+            return []
+    else:
+        return []
+
+    detections: list[DetectedFromLLM] = []
+    for item in items:
+        try:
+            detection = TypeAdapter(DetectedFromLLM).validate_python(item)
+        except Exception as exc:
+            log.error("校验 LLM 检测字段失败: %s", exc, exc_info=True)
+            continue
+        if detection.is_valid():
+            detections.append(detection)
+        else:
+            log.warning("LLM 检测参数无效: %s", detection)
+    return detections
+
+
+def parse_llm_detection(json_str: str) -> DetectedFromLLM | None:
+    detections = parse_llm_detections(json_str)
+    return detections[0] if detections else None
+
+
+def refine_detection(
+    frame: cv2.typing.MatLike,
+    detection: DetectedFromLLM,
+    *,
+    img_w: int | None = None,
+    img_h: int | None = None,
+) -> RefineResult:
+    """对单个 LLM 检测点做 MobileSAM 分割；失败时回退到 LLM 边界框。"""
+    if is_mobile_sam_enabled():
+        result = refine_detection_with_mobile_sam(frame, detection)
+        if result.box is not None:
+            return result
+        log.warning(
+            "MobileSAM 精化失败，回退到 LLM 边界框 (class=%s id=%s)",
+            detection.class_name,
+            detection.id,
         )
-        return None
 
+    img_w = img_w if img_w is not None else frame.shape[1]
+    img_h = img_h if img_h is not None else frame.shape[0]
     try:
-        detection = TypeAdapter(DetectedFromLLM).validate_python(raw)
+        return RefineResult(box=detection.to_detected_box(img_w, img_h))
     except Exception as exc:
-        log.error("校验 LLM 检测字段失败: %s", exc, exc_info=True)
-        return None
+        log.error("LLM 边界框转换失败: %s", exc, exc_info=True)
+        return RefineResult(box=None)
 
-    if not detection.is_valid():
-        log.warning("LLM 检测参数无效: %s", detection)
-        return None
-    return detection
+
+def refine_llm_json_to_boxes(
+    frame: cv2.typing.MatLike,
+    json_str: str,
+    *,
+    img_w: int | None = None,
+    img_h: int | None = None,
+) -> list[RefineResult]:
+    """LLM 多目标坐标 + 逐点 MobileSAM 分割 + 最小外接矩形。"""
+    detections = parse_llm_detections(json_str)
+    return [
+        refine_detection(frame, detection, img_w=img_w, img_h=img_h)
+        for detection in detections
+    ]
 
 
 def refine_llm_json_to_box(
@@ -287,20 +349,7 @@ def refine_llm_json_to_box(
     img_h: int | None = None,
 ) -> RefineResult:
     """LLM 坐标 + MobileSAM 分割 + 最小外接矩形；失败时回退到 LLM 轴对齐框。"""
-    detection = parse_llm_detection(json_str)
-    if detection is None:
+    detections = parse_llm_detections(json_str)
+    if not detections:
         return RefineResult(box=None)
-
-    if is_mobile_sam_enabled():
-        result = refine_detection_with_mobile_sam(frame, detection)
-        if result.box is not None:
-            return result
-        log.warning("MobileSAM 精化失败，回退到 LLM 边界框")
-
-    img_w = img_w if img_w is not None else frame.shape[1]
-    img_h = img_h if img_h is not None else frame.shape[0]
-    try:
-        return RefineResult(box=detection.to_detected_box(img_w, img_h))
-    except Exception as exc:
-        log.error("LLM 边界框转换失败: %s", exc, exc_info=True)
-        return RefineResult(box=None)
+    return refine_detection(frame, detections[0], img_w=img_w, img_h=img_h)

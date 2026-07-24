@@ -48,7 +48,7 @@ mobile_sam_enabled: true
 mobile_sam_checkpoint: models/mobile_sam/mobile_sam.pt
 mobile_sam_model_type: vit_t
 mobile_sam_device: auto
-mobile_sam_use_box_prompt: false
+mobile_sam_use_box_prompt: true
 mobile_sam_multimask_output: true
 mobile_sam_min_mask_area: 200
 
