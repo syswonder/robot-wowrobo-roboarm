@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OpenCV Headless Stream</title>
+  <style>
+    :root {
+      --page-gap: 16px;
+      --tile-gap: 10px;
+      --tile-padding: 12px;
+      --header-height: 36px;
+      --min-tile-width: 320px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: #111;
+      color: #eee;
+      overflow: hidden;
+    }
+    .page { padding: var(--page-gap); width: 100%; height: 100vh; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(var(--min-tile-width), 1fr));
+      gap: var(--page-gap);
+      align-items: start;
+      width: 100%;
+      height: 100%;
+    }
+    .tile {
+      background: #1b1b1b;
+      border-radius: 12px;
+      padding: var(--tile-padding);
+      display: flex;
+      flex-direction: column;
+      gap: var(--tile-gap);
+      min-width: 0;
+      height: 100%;
+    }
+    .tile-header {
+      height: var(--header-height);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      color: #8bd5ff;
+      word-break: break-word;
+    }
+    .tile-stream {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      flex: 1;
+      min-height: 0;
+    }
+    img {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      background: #000;
+      cursor: crosshair;
+      user-select: none;
+    }
+    .hint { color: #aaa; text-align: center; padding: 48px 16px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div id="emptyState" class="hint">Waiting for frames...</div>
+    <div id="grid" class="grid"></div>
+  </div>
+  <script>
+    const grid = document.getElementById('grid');
+    const emptyState = document.getElementById('emptyState');
+    const tiles = new Map();
+    const CV_EVENT = { MOUSEMOVE: 0, LBUTTONDOWN: 1, RBUTTONDOWN: 2, LBUTTONUP: 4, RBUTTONUP: 5 };
+    const CV_FLAG = { LBUTTON: 1, RBUTTON: 2, CTRL: 8, SHIFT: 16, ALT: 32 };
+    function imagePixel(img, e) {
+      const rect = img.getBoundingClientRect();
+      const naturalW = img.naturalWidth || rect.width;
+      const naturalH = img.naturalHeight || rect.height;
+      if (!naturalW || !naturalH) return null;
+      const scale = Math.min(rect.width / naturalW, rect.height / naturalH);
+      const drawW = naturalW * scale;
+      const drawH = naturalH * scale;
+      const offsetX = (rect.width - drawW) / 2;
+      const offsetY = (rect.height - drawH) / 2;
+      const x = Math.round((e.clientX - rect.left - offsetX) / scale);
+      const y = Math.round((e.clientY - rect.top - offsetY) / scale);
+      if (x < 0 || y < 0 || x >= naturalW || y >= naturalH) return null;
+      return { x, y };
+    }
+    function postMouse(windowName, event, x, y, flags) {
+      fetch(`/mouse/${encodeURIComponent(windowName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event, x, y, flags }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+    function attachMouseHandlers(img, windowName) {
+      img.addEventListener('contextmenu', (e) => e.preventDefault());
+      img.addEventListener('mousedown', (e) => {
+        const p = imagePixel(img, e);
+        if (!p) return;
+        const code = e.button === 0 ? CV_EVENT.LBUTTONDOWN : CV_EVENT.RBUTTONDOWN;
+        postMouse(windowName, code, p.x, p.y, 0);
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      const code = e.key.length === 1 ? e.key.charCodeAt(0) : (e.key === 'Escape' ? 27 : e.keyCode);
+      fetch('/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyCode: code }),
+      }).catch(() => {});
+    });
+    function createTile(windowName) {
+      const tile = document.createElement('section');
+      tile.className = 'tile';
+      const header = document.createElement('div');
+      header.className = 'tile-header';
+      header.textContent = windowName;
+      const img = document.createElement('img');
+      img.src = `/stream/${encodeURIComponent(windowName)}`;
+      attachMouseHandlers(img, windowName);
+      tile.appendChild(header);
+      tile.appendChild(img);
+      grid.appendChild(tile);
+      tiles.set(windowName, tile);
+    }
+    async function refreshWindows() {
+      const data = await (await fetch('/windows')).json();
+      const names = data.windows || [];
+      for (const name of names) if (!tiles.has(name)) createTile(name);
+      emptyState.style.display = names.length ? 'none' : 'block';
+    }
+    refreshWindows();
+    setInterval(refreshWindows, 1000);
+  </script>
+</body>
+</html>

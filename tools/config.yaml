@@ -25,3 +25,8 @@ cv2_headless_port:
 
 # 离线调试运动插值步数（对应 manifest 里 motion_steps）
 motion_steps: 20
+
+# 串口不稳定时：每次通信额外重试次数（总尝试 = 1 + N）
+arm_comm_retry: 10
+# 每次重试间隔（秒）
+arm_comm_retry_delay_s: 0.05

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import subprocess
@@ -108,7 +109,10 @@ class LLMAPI:
                 if schema is None
                 else {
                     "type": "json_schema",
-                    "json_schema": {"name": "detection_output", "schema": schema},
+                    "json_schema": {
+                        "name": "detection_output",
+                        "schema": inline_schema_refs(schema),
+                    },
                 }
             ),
         )
@@ -139,7 +143,42 @@ class LLMAPI:
                 self._start_times.pop(task, None)
         if completion.choices is None or len(completion.choices) == 0:
             return None, True
-        return completion.choices[0].message.content, True
+        return extract_completion_text(completion.choices[0].message), True
+
+
+def extract_completion_text(message: Any) -> str | None:
+    """从 LLM 回复中提取可用的检测 JSON 文本。
+
+    部分推理模型（如 Qwen thinking）会把完整结构化结果放在 reasoning_content，
+    而 content 里可能只有 thinking_process 叙述。
+    """
+    candidates: list[str] = []
+    for attr in ("content", "reasoning_content"):
+        value = getattr(message, attr, None)
+        if value and str(value).strip():
+            candidates.append(str(value).strip())
+
+    for candidate in candidates:
+        if _has_detection_payload(candidate):
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _has_detection_payload(raw: str) -> bool:
+    try:
+        parsed = json.loads(extract_json_from_markdown(raw))
+    except json.JSONDecodeError:
+        return False
+    if isinstance(parsed, list):
+        return bool(parsed)
+    if isinstance(parsed, dict):
+        if parsed.get("failed") is True:
+            return True
+        if parsed.get("objects"):
+            return True
+        if "box_center_x" in parsed:
+            return True
+    return False
 
 
 def inline_schema_refs(schema: dict) -> dict:
@@ -159,10 +198,14 @@ def inline_schema_refs(schema: dict) -> dict:
 
 
 def extract_json_from_markdown(text: str) -> str:
-    match = re.search(r"```(?:json|JSON)\s*(.*?)```", text, flags=re.S)
+    text = text.strip()
+    match = re.search(r"```(?:json|JSON)?\s*(.*?)```", text, flags=re.S)
     if match:
         return match.group(1).strip()
-    match = re.search(r"```\s*(.*?)```", text, flags=re.S)
-    if match:
-        return match.group(1).strip()
+    text = re.sub(r"```+\s*$", "", text).strip()
+    if text.startswith("```"):
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1 :].strip()
+        text = re.sub(r"```+\s*$", "", text).strip()
     return text

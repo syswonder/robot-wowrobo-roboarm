@@ -1,4 +1,5 @@
-# 对当前相机画面运行 YOLO 分类检测并逐个抓取。
+# 按 pilot 解析出的类别列表，逐类抓取并放置到对应位置。
+std_msgs/String[] categories
 ---
 bool success
 std_msgs/String message

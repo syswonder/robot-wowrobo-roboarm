@@ -1,0 +1,169 @@
+"""OpenCV 窗口 / 无头 Web 流显示（dev 调试用）。"""
+
+from __future__ import annotations
+
+import atexit
+import queue
+import threading
+from pathlib import Path
+from typing import Any, Callable
+
+import cv2
+from flask import Flask, Response, request
+
+from roboarm_core.config import get_config_value
+
+_WINDOW_READY: set[str] = set()
+_HEADLESS_SERVER_LOCK = threading.Lock()
+_HEADLESS_SERVER_STARTED = False
+_HEADLESS_TEMPLATE_PATH = Path(__file__).with_name("cv2_display.html")
+_HEADLESS_SERVER_HOST = "0.0.0.0"
+_HEADLESS_JPEG_QUALITY = 90
+_HEADLESS_LATEST_FRAMES: dict[str, bytes] = {}
+_HEADLESS_FRAME_EVENTS: dict[str, threading.Event] = {}
+_HEADLESS_KEY_QUEUE: queue.Queue[int] = queue.Queue()
+_HEADLESS_MOUSE_LOCK = threading.Lock()
+_HEADLESS_MOUSE_CALLBACKS: dict[str, tuple[Callable[..., Any], Any]] = {}
+
+
+def _headless_port() -> int | None:
+    port = get_config_value("cv2_headless_port", None, raise_if_missing=False)
+    if port is None or port == "":
+        return None
+    return int(port)
+
+
+def show_img_by_web() -> bool:
+    return _headless_port() is not None
+
+
+def _frame_event(window_name: str) -> threading.Event:
+    with _HEADLESS_SERVER_LOCK:
+        return _HEADLESS_FRAME_EVENTS.setdefault(window_name, threading.Event())
+
+
+def _headless_index_html() -> str:
+    return _HEADLESS_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+
+def _run_headless_server() -> None:
+    app = Flask(__name__)
+
+    @app.get("/")
+    def index():
+        return _headless_index_html()
+
+    @app.get("/windows")
+    def windows():
+        with _HEADLESS_SERVER_LOCK:
+            return {"windows": sorted(_HEADLESS_LATEST_FRAMES)}
+
+    @app.get("/stream/<path:window_name>")
+    def stream(window_name: str):
+        event = _frame_event(window_name)
+
+        def generate():
+            last_frame = None
+            while True:
+                if event.wait(timeout=30):
+                    event.clear()
+                frame = _HEADLESS_LATEST_FRAMES.get(window_name)
+                if frame is None or frame == last_frame:
+                    continue
+                last_frame = frame
+                yield (
+                    b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+                )
+
+        return Response(
+            generate(), mimetype="multipart/x-mixed-replace; boundary=frame"
+        )
+
+    @app.post("/key")
+    def key_event():
+        payload = request.get_json(silent=True) or {}
+        key_code = payload.get("keyCode")
+        if not isinstance(key_code, int):
+            return {"ok": False}, 400
+        _HEADLESS_KEY_QUEUE.put(key_code & 0xFFFF)
+        return {"ok": True}
+
+    @app.post("/mouse/<path:window_name>")
+    def mouse_event(window_name: str):
+        payload = request.get_json(silent=True) or {}
+        try:
+            event_code = int(payload["event"])
+            x = int(payload["x"])
+            y = int(payload["y"])
+            flags = int(payload.get("flags", 0))
+        except (KeyError, TypeError, ValueError):
+            return {"ok": False}, 400
+        with _HEADLESS_MOUSE_LOCK:
+            entry = _HEADLESS_MOUSE_CALLBACKS.get(window_name)
+        if entry is None:
+            return {"ok": True, "dispatched": False}
+        callback, param = entry
+        callback(event_code, x, y, flags, param)
+        return {"ok": True, "dispatched": True}
+
+    app.run(
+        host=_HEADLESS_SERVER_HOST,
+        port=_headless_port(),
+        threaded=True,
+        debug=False,
+        use_reloader=False,
+    )
+
+
+def _ensure_headless_server() -> None:
+    global _HEADLESS_SERVER_STARTED
+    if _HEADLESS_SERVER_STARTED:
+        return
+    with _HEADLESS_SERVER_LOCK:
+        if _HEADLESS_SERVER_STARTED:
+            return
+        thread = threading.Thread(target=_run_headless_server, daemon=True)
+        thread.start()
+        _HEADLESS_SERVER_STARTED = True
+        print(
+            f"Headless OpenCV stream ready at http://{_HEADLESS_SERVER_HOST}:{_headless_port()}/"
+        )
+
+
+def show_image(window_name: str, image: Any) -> None:
+    if show_img_by_web():
+        _ensure_headless_server()
+        ok, encoded = cv2.imencode(
+            ".jpg",
+            image,
+            [int(cv2.IMWRITE_JPEG_QUALITY), _HEADLESS_JPEG_QUALITY],
+        )
+        if ok:
+            _HEADLESS_LATEST_FRAMES[window_name] = encoded.tobytes()
+            _frame_event(window_name).set()
+        return
+    if window_name not in _WINDOW_READY:
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        _WINDOW_READY.add(window_name)
+    cv2.imshow(window_name, image)
+
+
+def poll_key(delay: int = 1) -> int:
+    if show_img_by_web():
+        timeout = None if delay <= 0 else delay / 1000.0
+        try:
+            return _HEADLESS_KEY_QUEUE.get(timeout=timeout)
+        except queue.Empty:
+            return -1
+    return cv2.waitKey(delay)
+
+
+def destroy_all_windows() -> None:
+    if show_img_by_web():
+        with _HEADLESS_MOUSE_LOCK:
+            _HEADLESS_MOUSE_CALLBACKS.clear()
+        return
+    cv2.destroyAllWindows()
+
+
+atexit.register(destroy_all_windows)

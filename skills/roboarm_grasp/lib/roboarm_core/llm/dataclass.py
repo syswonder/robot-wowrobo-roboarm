@@ -1,7 +1,20 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from pydantic import BaseModel, Field
+
 from roboarm_core.config import get_config_value
+
+
+def normalize_box_rotation_deg(angle_deg: float) -> float:
+    angle = float(angle_deg) % 360.0
+    if angle > 180.0:
+        angle -= 360.0
+    if angle > 90.0:
+        angle -= 180.0
+    elif angle < -90.0:
+        angle += 180.0
+    return angle
 
 
 @dataclass
@@ -29,7 +42,6 @@ class DetectedFromLLM:
         img_w: int,
         img_h: int,
         confidence: Optional[float] = None,
-        box_rotation_deg: float = 0.0,
     ) -> "DetectedBox":
         if not self.is_valid():
             raise ValueError("Invalid box parameters, cannot convert to DetectedBox.")
@@ -44,9 +56,38 @@ class DetectedFromLLM:
             box_center_y=cy,
             box_width=round(self.box_width * img_w),
             box_height=round(self.box_height * img_h),
-            box_rotation_deg=box_rotation_deg,
+            box_rotation_deg=0.0,
             confidence=confidence,
         )
+
+
+class DetectedItem(BaseModel):
+    """单个检测目标（用于 LLM JSON schema）。"""
+
+    id: int
+    class_name: str
+    box_center_x: float = Field(ge=0.0, le=1.0)
+    box_center_y: float = Field(ge=0.0, le=1.0)
+    box_width: float = Field(ge=0.0, le=1.0)
+    box_height: float = Field(ge=0.0, le=1.0)
+
+    def to_detected_from_llm(self) -> "DetectedFromLLM":
+        return DetectedFromLLM(
+            id=self.id,
+            class_name=self.class_name,
+            box_center_x=self.box_center_x,
+            box_center_y=self.box_center_y,
+            box_width=self.box_width,
+            box_height=self.box_height,
+        )
+
+
+class InstructionDetectResponse(BaseModel):
+    """user_instruction_prompt 的结构化输出。"""
+
+    thinking_process: str = ""
+    failed: bool = False
+    objects: list[DetectedItem] = Field(default_factory=list)
 
 
 @dataclass
