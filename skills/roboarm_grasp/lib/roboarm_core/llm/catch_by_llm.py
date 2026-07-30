@@ -123,6 +123,34 @@ def _select_yolo_detections(
     detections: list[tuple],
     instruction: str,
 ) -> list[tuple]:
+    """单次抓取：只返回得分最高的一个检测框。"""
+    if not detections:
+        return []
+    place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
+    scored = [
+        (
+            _score_detection_for_instruction(
+                _yolo_tuple_to_box(det).class_name, instruction, place_pos
+            ),
+            det,
+        )
+        for det in detections
+    ]
+    scored.sort(key=lambda item: item[0], reverse=True)
+    if scored[0][0] <= 0:
+        best_det = max(
+            detections,
+            key=lambda det: _yolo_tuple_to_box(det).confidence or 0.0,
+        )
+        return [best_det]
+    return [scored[0][1]]
+
+
+def _select_yolo_detections_all(
+    detections: list[tuple],
+    instruction: str,
+) -> list[tuple]:
+    """批量抓取：返回所有得分达标的检测框。"""
     if not detections:
         return []
     if _instruction_implies_all(instruction):
@@ -169,6 +197,8 @@ def _catch_box(
         target_y + offset * np.sin(-gripper_angle_rad),
         gripper_angle_rad,
     )
+    if ok:
+        arm.move_to_home(gripper_open_0to1=0)
     return ok, target_x, target_y, gripper_angle_rad
 
 
@@ -263,6 +293,85 @@ def _refine_and_catch_first(
     return None, False, sam_debug_list
 
 
+def _await_llm_detections(
+    frame: cv2.typing.MatLike,
+    instruction: str,
+    *,
+    prompt_key: str,
+    save_path: str | None = None,
+) -> list[DetectedFromLLM]:
+    llm_detect = LLMDetect()
+    response_task = llm_detect.detect_frame(
+        frame,
+        prompt_key=prompt_key,
+        replace_map={"{user_instruction}": instruction},
+        schema=TypeAdapter(InstructionDetectResponse).json_schema(),
+    )
+    detections: list[DetectedFromLLM] = []
+    processed = False
+
+    while True:
+        response, done = llm_detect.llm_api.await_task(response_task, blocking=False)
+        if response and not processed:
+            detections = parse_llm_detections(response)
+            processed = True
+        elif not processed:
+            show_llm_detection(
+                frame,
+                [],
+                status_lines=["instruction: " + instruction, "waiting for LLM..."],
+                save_path=save_path,
+            )
+        if done:
+            break
+    return detections
+
+
+def detect_all_by_instruction(
+    frame: cv2.typing.MatLike,
+    instruction: str,
+    *,
+    save_path: str | None = None,
+) -> list[DetectedFromLLM]:
+    """使用 grasp_all prompt / YOLO 全量筛选，返回所有符合指令的检测目标。"""
+    backend = _get_instruction_detect_backend()
+    if backend == "yolo":
+        detections = _run_yolo_detections(frame)
+        selected_dets = _select_yolo_detections_all(detections, instruction)
+        show_yolo_detection(
+            frame,
+            detections,
+            status_lines=[
+                f"instruction: {instruction}",
+                f"selected all: {len(selected_dets)} / {len(detections)}",
+            ],
+            save_path=save_path,
+        )
+        llm_detections: list[DetectedFromLLM] = []
+        for index, det in enumerate(selected_dets, start=1):
+            item = _yolo_tuple_to_detected_from_llm(det, frame)
+            item.id = index
+            llm_detections.append(item)
+        return llm_detections
+
+    detections = _await_llm_detections(
+        frame,
+        instruction,
+        prompt_key="grasp_all_instruction_prompt",
+        save_path=save_path,
+    )
+    show_llm_detection(
+        frame,
+        [],
+        status_lines=[
+            "instruction: " + instruction,
+            f"detected all: {len(detections)}",
+        ],
+        save_path=save_path,
+    )
+    return detections
+
+
 def _grasp_by_instruction_llm(
     frame: cv2.typing.MatLike,
     instruction: str,
@@ -270,43 +379,36 @@ def _grasp_by_instruction_llm(
     arm: Any,
     save_path: str | None = None,
 ) -> tuple[DetectedBox | None, bool]:
-    llm_detect = LLMDetect()
-    response_task = llm_detect.detect_frame(
+    detections = _await_llm_detections(
         frame,
+        instruction,
         prompt_key="user_instruction_prompt",
-        replace_map={"{user_instruction}": instruction},
-        schema=TypeAdapter(InstructionDetectResponse).json_schema(),
+        save_path=save_path,
     )
+    if detections:
+        detections = detections[:1]
     offset = get_config_value("catch_offset")
-    processed = False
-    box: DetectedBox | None = None
-    caught = False
-    sam_debug_list: list[SamRefineDebug] = []
+    if not detections:
+        show_llm_detection(
+            frame,
+            [],
+            status_lines=[
+                "instruction: " + instruction,
+                "no target detected",
+            ],
+            save_path=save_path,
+        )
+        return None, False
 
-    while True:
-        response, done = llm_detect.llm_api.await_task(response_task, blocking=False)
-        if response and not processed:
-            detections = parse_llm_detections(response)
-            box, caught, sam_debug_list = _refine_and_catch_first(
-                frame,
-                detections,
-                arm=arm,
-                offset=offset,
-                instruction=instruction,
-                queue_output=queue_output,
-                save_path=save_path,
-            )
-            processed = True
-        elif not processed:
-            status = ["instruction: " + instruction, "waiting for LLM..."]
-            show_llm_detection(
-                frame,
-                [],
-                status_lines=status,
-                save_path=save_path,
-            )
-        if done:
-            break
+    box, caught, _sam_debug = _refine_and_catch_first(
+        frame,
+        detections,
+        arm=arm,
+        offset=offset,
+        instruction=instruction,
+        queue_output=queue_output,
+        save_path=save_path,
+    )
     return box, caught
 
 
@@ -454,6 +556,92 @@ def _get_save_path() -> str:
         return "../../grasp_debug.jpg"
     return None
 
+def grasp_all_by_instruction(
+    frame: cv2.typing.MatLike,
+    instruction: str,
+    queue_output: Queue,
+    arm: Any,
+) -> dict[str, Any]:
+    """一次性检测所有符合指令的物体，再逐个 refine、抓取并放置。"""
+    if arm is None:
+        raise RuntimeError("arm instance is required for Robonix grasp")
+
+    backend = _get_instruction_detect_backend()
+    save_path = _get_save_path()
+    boxes: list[str] = []
+    grasped_count = 0
+    detected_count = 0
+
+    try:
+        _prepare_arm_for_grasp(arm)
+        detections = detect_all_by_instruction(
+            frame, instruction, save_path=save_path
+        )
+        if not detections:
+            return {
+                "status": "failed",
+                "reason": "未检测到目标物体",
+                "instruction": instruction,
+                "method": backend,
+                "grasp_success": False,
+            }
+
+        detected_count = len(detections)
+        offset = get_config_value("catch_offset")
+
+        for detection in detections:
+            box, caught, _sam_debug = _refine_and_catch_first(
+                frame,
+                [detection],
+                arm=arm,
+                offset=offset,
+                instruction=instruction,
+                queue_output=queue_output,
+                save_path=save_path,
+            )
+            if not caught or box is None:
+                continue
+
+            boxes.append(box.class_name)
+            place_result = place_by_instruction("", arm, class_name=box.class_name)
+            if place_result.get("place_success"):
+                grasped_count += 1
+            else:
+                return {
+                    "status": "failed",
+                    "reason": place_result.get("reason", "放置失败"),
+                    "instruction": instruction,
+                    "method": backend,
+                    "grasp_success": grasped_count > 0,
+                    "grasped_count": grasped_count,
+                    "detected_count": detected_count,
+                    "target": ", ".join(boxes),
+                }
+    except Exception as exc:
+        log.error("grasp_all_by_instruction 异常: %s", exc, exc_info=True)
+        return {
+            "status": "failed",
+            "reason": str(exc),
+            "instruction": instruction,
+            "method": backend,
+            "grasp_success": grasped_count > 0,
+            "grasped_count": grasped_count,
+            "detected_count": detected_count,
+            "target": ", ".join(boxes),
+        }
+
+    return {
+        "status": "success" if grasped_count > 0 else "failed",
+        "target": ", ".join(boxes),
+        "instruction": instruction,
+        "method": backend,
+        "grasp_success": grasped_count > 0,
+        "grasped_count": grasped_count,
+        "detected_count": detected_count,
+        "reason": None if grasped_count > 0 else "抓取失败",
+    }
+
+
 def catch_by_instruction(
     frame: cv2.typing.MatLike,
     instruction: str,
@@ -462,49 +650,13 @@ def catch_by_instruction(
     arm: Any = None,
 ) -> dict[str, Any]:
     """检测并循环执行「抓取 + 放置」，直到没有可抓取目标。"""
-    if arm is None:
-        raise RuntimeError("arm instance is required for Robonix grasp")
-
-    backend = _get_instruction_detect_backend()
-    boxes: list[str] = []
-    grasped_count = 0
-    detected_count = 0
-
-    while True:
-        grasp_result = grasp_by_instruction(frame, instruction, queue_output, arm)
-        if grasp_result.get("status") != "success" or not grasp_result.get("grasp_success"):
-            if not boxes:
-                return grasp_result
-            break
-
-        target = str(grasp_result.get("target", ""))
-        boxes.append(target)
-        detected_count += 1
-
-        place_result = place_by_instruction("", arm, class_name=target)
-        if place_result.get("place_success"):
-            grasped_count += 1
-            if success_callback:
-                success_callback()
-        else:
-            return {
-                "status": "failed",
-                "reason": place_result.get("reason", "放置失败"),
-                "instruction": instruction,
-                "method": backend,
-                "grasp_success": grasped_count > 0,
-                "grasped_count": grasped_count,
-                "detected_count": detected_count,
-                "target": ", ".join(boxes),
-            }
-
-    success_count = grasped_count
-    return {
-        "status": "success" if success_count > 0 else "failed",
-        "target": ", ".join(boxes),
-        "instruction": instruction,
-        "method": backend,
-        "grasp_success": success_count > 0,
-        "grasped_count": success_count,
-        "detected_count": detected_count,
-    }
+    result = grasp_all_by_instruction(
+        frame,
+        instruction,
+        queue_output,
+        arm,
+    )
+    if success_callback and result.get("grasped_count", 0) > 0:
+        for _ in range(int(result["grasped_count"])):
+            success_callback()
+    return result
