@@ -1,0 +1,8 @@
+[contract]
+id      = "robonix/skill/roboarm_grasp/place_by_instruction"
+version = "1"
+kind    = "skill"
+idl     = "roboarm_grasp/srv/PlaceByInstruction.srv"
+
+[mode]
+type = "rpc"

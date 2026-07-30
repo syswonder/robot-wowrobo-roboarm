@@ -15,7 +15,7 @@ import numpy as np
 from robonix_api import ATLAS, Err, Ok, Skill
 from roboarm_core.arm.robonix_arm import RobonixArm
 from roboarm_core.config import init_config
-from roboarm_core.llm.catch_by_llm import catch_by_instruction
+from roboarm_core.llm.catch_by_llm import grasp_by_instruction, place_by_instruction
 from roboarm_core.cv2_display import destroy_all_windows
 from roboarm_core.vision.detect_viz import is_dev_mode
 from sensor_msgs.msg import Image
@@ -189,17 +189,20 @@ try:
         ClassifyAndGrasp_Response,
         GraspByInstruction_Request,
         GraspByInstruction_Response,
+        PlaceByInstruction_Request,
+        PlaceByInstruction_Response,
     )
     from std_msgs_mcp import String
 except ImportError:  # pragma: no cover
     ClassifyAndGrasp_Request = ClassifyAndGrasp_Response = None  # type: ignore
     GraspByInstruction_Request = GraspByInstruction_Response = None  # type: ignore
+    PlaceByInstruction_Request = PlaceByInstruction_Response = None  # type: ignore
     String = None  # type: ignore
 
 
-def _format_grasp_result(instruction: str, result: dict[str, Any]) -> tuple[bool, str]:
+def _format_grasp_result(instruction: str, result: dict[str, Any]) -> tuple[bool, str, str]:
     success = result.get("status") == "success" and result.get("grasp_success")
-    target = result.get("target", "")
+    target = str(result.get("target", "") or "")
     method = result.get("method", "llm")
     msg = (
         f"检测: {method}; 指令: {instruction}; 目标: {target or '无'}; "
@@ -212,10 +215,22 @@ def _format_grasp_result(instruction: str, result: dict[str, Any]) -> tuple[bool
         )
     if result.get("reason"):
         msg += f"; {result['reason']}"
+    return bool(success), msg, target
+
+
+def _format_place_result(instruction: str, result: dict[str, Any]) -> tuple[bool, str]:
+    success = result.get("status") == "success" and result.get("place_success")
+    target = result.get("target", "")
+    msg = (
+        f"指令: {instruction}; 目标: {target or '无'}; "
+        f"结果: {result.get('status')}"
+    )
+    if result.get("reason"):
+        msg += f"; {result['reason']}"
     return bool(success), msg
 
 
-def _execute_grasp_by_instruction(instruction: str) -> tuple[bool, str]:
+def _execute_grasp_by_instruction(instruction: str) -> tuple[bool, str, str]:
     from queue import Queue
 
     if _arm is None:
@@ -223,10 +238,52 @@ def _execute_grasp_by_instruction(instruction: str) -> tuple[bool, str]:
 
     frame = _get_bgr_frame()
     if frame is None:
-        return False, "无法获取相机画面"
+        return False, "无法获取相机画面", ""
 
-    result = catch_by_instruction(frame, instruction, Queue(), arm=_arm)
+    result = grasp_by_instruction(frame, instruction, Queue(), arm=_arm)
     return _format_grasp_result(instruction, result)
+
+
+def _execute_place_by_instruction(
+    instruction: str,
+    class_name: str = "",
+) -> tuple[bool, str]:
+    if _arm is None:
+        raise RuntimeError("skill is not activated")
+
+    result = place_by_instruction(instruction, _arm, class_name=class_name)
+    return _format_place_result(instruction, result)
+
+
+def _execute_grasp_and_place_by_instruction(instruction: str) -> tuple[bool, str]:
+    all_ok = True
+    targets: list[str] = []
+    grasped_count = 0
+    last_msg = ""
+
+    while True:
+        ok_grasp, msg_grasp, class_name = _execute_grasp_by_instruction(instruction)
+        if not ok_grasp:
+            if not targets:
+                return False, msg_grasp
+            break
+
+        ok_place, msg_place = _execute_place_by_instruction("", class_name)
+        last_msg = f"抓取: {msg_grasp}; 放置: {msg_place}"
+        targets.append(class_name)
+        if ok_place:
+            grasped_count += 1
+        else:
+            all_ok = False
+            break
+
+    summary = (
+        f"指令: {instruction}; 目标: {', '.join(targets) or '无'}; "
+        f"成功 {grasped_count} 个"
+    )
+    if last_msg:
+        summary += f"; {last_msg}"
+    return all_ok and grasped_count > 0, summary
 
 
 if ClassifyAndGrasp_Request is not None:
@@ -250,7 +307,7 @@ if ClassifyAndGrasp_Request is not None:
         details: list[str] = []
         for category in categories:
             instruction = f"抓取所有{category}"
-            ok, msg = _execute_grasp_by_instruction(instruction)
+            ok, msg = _execute_grasp_and_place_by_instruction(instruction)
             details.append(f"{category}: {'OK' if ok else 'FAIL'} ({msg})")
             if not ok:
                 all_ok = False
@@ -276,10 +333,38 @@ if GraspByInstruction_Request is not None:
             return GraspByInstruction_Response(
                 success=False,
                 message=String(data="instruction 不能为空"),
+                class_name=String(data=""),
             )
 
-        ok, msg = _execute_grasp_by_instruction(instruction)
+        ok, msg, class_name = _execute_grasp_by_instruction(instruction)
         return GraspByInstruction_Response(
+            success=ok,
+            message=String(data=msg),
+            class_name=String(data=class_name),
+        )
+
+
+if PlaceByInstruction_Request is not None:
+
+    @skill.mcp("robonix/skill/roboarm_grasp/place_by_instruction")
+    def place_by_instruction_tool(
+        req: PlaceByInstruction_Request,
+    ) -> PlaceByInstruction_Response:
+        if _arm is None:
+            raise RuntimeError("skill is not activated")
+
+        instruction = (req.instruction.data or "").strip()
+        class_name = (req.class_name.data or "").strip()
+        if not instruction and not class_name:
+            return PlaceByInstruction_Response(
+                success=False,
+                message=String(
+                    data="instruction（放置位置，如「盒子」）与 class_name 不能同时为空"
+                ),
+            )
+
+        ok, msg = _execute_place_by_instruction(instruction, class_name)
+        return PlaceByInstruction_Response(
             success=ok,
             message=String(data=msg),
         )

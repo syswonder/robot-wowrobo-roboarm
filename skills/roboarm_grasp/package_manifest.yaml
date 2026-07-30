@@ -22,6 +22,8 @@ capabilities:
     path: capabilities/driver.v1.toml
   - name: robonix/skill/roboarm_grasp/grasp_by_instruction
     path: capabilities/grasp_by_instruction.v1.toml
+  - name: robonix/skill/roboarm_grasp/place_by_instruction
+    path: capabilities/place_by_instruction.v1.toml
   - name: robonix/skill/roboarm_grasp/classify_and_grasp
     path: capabilities/classify_and_grasp.v1.toml
 

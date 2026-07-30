@@ -25,7 +25,7 @@ gripper_close_hold_s: 0.3
 gripper_open_hold_s: 0.3
 # 抬升高度，单位m
 catch_raise_height: 0.1
-place_raise_height: 0.1
+place_raise_height: 0.23
 # 放置前先下降到桌面高度再开爪，放置更稳；若仍抖动可配合增大 gripper_open_hold_s
 go_down_before_open_gripper_in_place: false
 # 仅在 go_down_before_open_gripper_in_place 为 false 时生效：悬停到位后、开爪前等待机械臂停稳，单位 s
@@ -72,8 +72,8 @@ place_pos:
       - 蓝
   red_block:
     pos:
-      - 0.1
-      - 0.1
+      - 0.2
+      - 0.06
     keywords:
       - red
       - 红
@@ -91,6 +91,13 @@ place_pos:
     keywords:
       - white
       - 白
+  box:
+    pos:
+      - 0.2
+      - 0.06
+    keywords:
+      - box
+      - 盒
 
 #在放置位置多远的块不再抓取，防止重复抓，单位m
 place_distance_threshold: 0.05
@@ -98,7 +105,7 @@ place_distance_threshold: 0.05
 catch_offset: 0.01
 
 # dev 调试：为 true 时在抓取 skill 执行过程中显示检测画面（YOLO / LLM 分窗口）
-dev: true
+dev: false
 # WSL / 无 GUI 时可设端口（如 8765），浏览器访问 http://<host>:8765/ 查看；留空则用本地 OpenCV 窗口
 cv2_headless_port:
 # 是否保存抓取过程中的图片

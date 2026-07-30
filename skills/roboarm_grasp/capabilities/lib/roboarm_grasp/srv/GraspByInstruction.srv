@@ -1,5 +1,6 @@
-# 根据自然语言指令识别目标并抓取放置。
+# 根据自然语言指令识别目标并抓取（不放置）。
 std_msgs/String instruction
 ---
 bool success
 std_msgs/String message
+std_msgs/String class_name

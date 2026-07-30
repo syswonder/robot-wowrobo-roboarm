@@ -54,7 +54,7 @@ def grasp_detections(
         target_x, target_y = arm.pixel2pos(u, v)
         gripper_angle_rad = arm.gripper_angle_by_longer(u, v, w, h, angle_deg)
         class_place_pos = resolve_place_pos(
-            class_name,
+            class_name=class_name,
             place_pos=place_pos,
             target_x=target_x,
             target_y=target_y,
