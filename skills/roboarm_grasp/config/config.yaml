@@ -44,7 +44,7 @@ llm_base_url: http://token-hub.lol/v1
 llm_api_key: ""
 prompts_file: prompts.toml
 https_proxy:
-llm_model: qwen3.7-plus
+llm_model: qwen3.6-flash
 #如果相机放在臂对面，就写为true
 RotationCam2Arm: true
 

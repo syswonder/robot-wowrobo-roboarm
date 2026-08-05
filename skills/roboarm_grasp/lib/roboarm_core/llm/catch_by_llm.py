@@ -238,8 +238,21 @@ def _prepare_arm_for_grasp(arm: Any) -> None:
         "default_gripper_aside_pos", raise_if_missing=False
     )
     if default_gripper_aside_pos is not None:
-        arm.move_to(default_gripper_aside_pos)
+        arm.move_to(default_gripper_aside_pos, block_until_reach=True)
     time.sleep(0.5)
+
+
+def _frame_after_prepare_arm(
+    arm: Any,
+    frame: cv2.typing.MatLike | None,
+    get_frame: Callable[[], cv2.typing.MatLike | None] | None,
+) -> cv2.typing.MatLike | None:
+    _prepare_arm_for_grasp(arm)
+    if frame is not None:
+        return frame
+    if get_frame is None:
+        raise RuntimeError("frame 或 get_frame 必须提供其一")
+    return get_frame()
 
 
 def _refine_and_catch_first(
@@ -469,10 +482,12 @@ def _grasp_by_instruction_yolo(
 
 
 def grasp_by_instruction(
-    frame: cv2.typing.MatLike,
+    frame: cv2.typing.MatLike | None,
     instruction: str,
     queue_output: Queue,
     arm: Any,
+    *,
+    get_frame: Callable[[], cv2.typing.MatLike | None] | None = None,
 ) -> dict[str, Any]:
     if arm is None:
         raise RuntimeError("arm instance is required for Robonix grasp")
@@ -481,7 +496,15 @@ def grasp_by_instruction(
     save_path = _get_save_path()
 
     try:
-        _prepare_arm_for_grasp(arm)
+        frame = _frame_after_prepare_arm(arm, frame, get_frame)
+        if frame is None:
+            return {
+                "status": "failed",
+                "reason": "无法获取相机画面",
+                "instruction": instruction,
+                "method": backend,
+                "grasp_success": False,
+            }
         if backend == "yolo":
             box, caught = _grasp_by_instruction_yolo(
                 frame, instruction, queue_output, arm, save_path
@@ -575,10 +598,12 @@ def _get_save_path() -> str:
     return None
 
 def grasp_all_by_instruction(
-    frame: cv2.typing.MatLike,
+    frame: cv2.typing.MatLike | None,
     instruction: str,
     queue_output: Queue,
     arm: Any,
+    *,
+    get_frame: Callable[[], cv2.typing.MatLike | None] | None = None,
 ) -> dict[str, Any]:
     """一次性检测所有符合指令的物体，再逐个 refine、抓取并放置。"""
     if arm is None:
@@ -591,7 +616,15 @@ def grasp_all_by_instruction(
     detected_count = 0
 
     try:
-        _prepare_arm_for_grasp(arm)
+        frame = _frame_after_prepare_arm(arm, frame, get_frame)
+        if frame is None:
+            return {
+                "status": "failed",
+                "reason": "无法获取相机画面",
+                "instruction": instruction,
+                "method": backend,
+                "grasp_success": False,
+            }
         detections = detect_all_by_instruction(
             frame, instruction, save_path=save_path
         )

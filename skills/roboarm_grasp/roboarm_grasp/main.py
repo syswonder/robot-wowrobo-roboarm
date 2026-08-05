@@ -243,11 +243,9 @@ def _execute_grasp_by_instruction(instruction: str) -> tuple[bool, str, str]:
     if _arm is None:
         raise RuntimeError("skill is not activated")
 
-    frame = _get_bgr_frame()
-    if frame is None:
-        return False, "无法获取相机画面", ""
-
-    result = grasp_by_instruction(frame, instruction, Queue(), arm=_arm)
+    result = grasp_by_instruction(
+        None, instruction, Queue(), arm=_arm, get_frame=_get_bgr_frame
+    )
     return _format_grasp_result(instruction, result)
 
 
@@ -268,15 +266,12 @@ def _execute_grasp_all_by_instruction(instruction: str) -> tuple[bool, str, str]
     if _arm is None:
         raise RuntimeError("skill is not activated")
 
-    frame = _get_bgr_frame()
-    if frame is None:
-        return False, "无法获取相机画面", ""
-
     result = grasp_all_by_instruction(
-        frame,
+        None,
         instruction,
         Queue(),
         arm=_arm,
+        get_frame=_get_bgr_frame,
     )
     success = result.get("status") == "success" and result.get("grasp_success")
     target = str(result.get("target", "") or "")
