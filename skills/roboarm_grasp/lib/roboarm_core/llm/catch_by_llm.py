@@ -182,6 +182,7 @@ def _catch_box(
     *,
     offset: float,
     queue_output: Queue,
+    return_home_after_catch: bool = True,
 ) -> tuple[bool, float, float, float]:
     queue_output.put(box)
     target_x, target_y = arm.pixel2pos(box.box_center_x, box.box_center_y)
@@ -197,7 +198,7 @@ def _catch_box(
         target_y + offset * np.sin(-gripper_angle_rad),
         gripper_angle_rad,
     )
-    if ok:
+    if ok and return_home_after_catch:
         arm.move_to_home(gripper_open_0to1=0)
     return ok, target_x, target_y, gripper_angle_rad
 
@@ -250,6 +251,7 @@ def _refine_and_catch_first(
     instruction: str,
     queue_output: Queue,
     save_path: str | None = None,
+    return_home_after_catch: bool = True,
 ) -> tuple[DetectedBox | None, bool, list[SamRefineDebug]]:
     img_w, img_h = frame.shape[1], frame.shape[0]
     sam_debug_list: list[SamRefineDebug] = []
@@ -269,7 +271,11 @@ def _refine_and_catch_first(
             continue
         refined_boxes.append(box)
         ok, target_x, target_y, _gripper_angle_rad = _catch_box(
-            arm, box, offset=offset, queue_output=queue_output
+            arm,
+            box,
+            offset=offset,
+            queue_output=queue_output,
+            return_home_after_catch=return_home_after_catch,
         )
         status = ["instruction: " + instruction, f"refined: {len(refined_boxes)}"]
         if ok:
@@ -392,6 +398,9 @@ def _grasp_by_instruction_llm(
     if detections:
         detections = detections[:1]
     offset = get_config_value("catch_offset")
+    return_home_after_catch = get_config_value(
+        "return_home_after_grasp_by_instruction", True, raise_if_missing=False
+    )
     if not detections:
         show_llm_detection(
             frame,
@@ -412,6 +421,7 @@ def _grasp_by_instruction_llm(
         instruction=instruction,
         queue_output=queue_output,
         save_path=save_path,
+        return_home_after_catch=return_home_after_catch,
     )
     return box, caught
 
@@ -435,6 +445,9 @@ def _grasp_by_instruction_yolo(
         save_path=save_path,
     )
     offset = get_config_value("catch_offset")
+    return_home_after_catch = get_config_value(
+        "return_home_after_grasp_by_instruction", True, raise_if_missing=False
+    )
 
     llm_detections: list[DetectedFromLLM] = []
     for index, det in enumerate(selected_dets, start=1):
@@ -450,6 +463,7 @@ def _grasp_by_instruction_yolo(
         instruction=instruction,
         queue_output=queue_output,
         save_path=save_path,
+        return_home_after_catch=return_home_after_catch,
     )
     return box, caught
 

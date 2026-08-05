@@ -21,6 +21,8 @@ default_gripper_aside_pos:
 calibration_xy_offset:
   - 0.0
   - 0.0
+# grasp_by_instruction 抓取成功后是否回到 home 位置（夹爪保持闭合）
+return_home_after_grasp_by_instruction: false
 
 default_gripper_close_threshold: 0.05
 # 夹爪闭合指令重复次数（串口/ROS 链路可能有延迟，多次下发更可靠）
@@ -42,7 +44,7 @@ llm_base_url: http://token-hub.lol/v1
 llm_api_key: ""
 prompts_file: prompts.toml
 https_proxy:
-llm_model: qwen3.6-flash
+llm_model: qwen3.7-plus
 #如果相机放在臂对面，就写为true
 RotationCam2Arm: true
 
@@ -111,7 +113,7 @@ place_distance_threshold: 0.05
 catch_offset: 0.01
 
 # dev 调试：为 true 时在抓取 skill 执行过程中显示检测画面（YOLO / LLM 分窗口）
-dev: false
+dev: true
 # WSL / 无 GUI 时可设端口（如 8765），浏览器访问 http://<host>:8765/ 查看；留空则用本地 OpenCV 窗口
 cv2_headless_port:
 # 是否保存抓取过程中的图片
