@@ -10,11 +10,17 @@ catch_time_interval_s: 0.1
 get_arm_angles_retry_times: 3
 arm_reach_mse_threshold_deg2: 1.0
 
-#夹爪转到一边，防止遮挡相机
+# 开始抓取前是否移开机械臂为相机提供视野
+move_gripper_aside_for_camera: true
+# 夹爪转到一边，防止遮挡相机（仅 move_gripper_aside_for_camera 为 true 时生效）
 default_gripper_aside_pos:
   - 0.1
   - 0.0
   - 0.12
+# 手眼标定 XY 补偿偏移，单位 m，用于弥补标定误差 [x, y]
+calibration_xy_offset:
+  - 0.0
+  - 0.0
 
 default_gripper_close_threshold: 0.05
 # 夹爪闭合指令重复次数（串口/ROS 链路可能有延迟，多次下发更可靠）
@@ -27,7 +33,7 @@ gripper_open_hold_s: 0.3
 catch_raise_height: 0.1
 place_raise_height: 0.23
 # 放置前先下降到桌面高度再开爪，放置更稳；若仍抖动可配合增大 gripper_open_hold_s
-go_down_before_open_gripper_in_place: false
+go_down_before_open_gripper_in_place: true
 # 仅在 go_down_before_open_gripper_in_place 为 false 时生效：悬停到位后、开爪前等待机械臂停稳，单位 s
 place_hover_settle_s: 0.3
 

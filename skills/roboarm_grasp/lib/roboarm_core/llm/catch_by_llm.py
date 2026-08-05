@@ -229,6 +229,10 @@ def _place_at(
 
 
 def _prepare_arm_for_grasp(arm: Any) -> None:
+    if not get_config_value(
+        "move_gripper_aside_for_camera", True, raise_if_missing=False
+    ):
+        return
     default_gripper_aside_pos = get_config_value(
         "default_gripper_aside_pos", raise_if_missing=False
     )

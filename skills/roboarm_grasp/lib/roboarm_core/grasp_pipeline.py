@@ -96,6 +96,10 @@ def grasp_detections(
 
 
 def move_gripper_aside(arm: Arm) -> None:
+    if not get_config_value(
+        "move_gripper_aside_for_camera", True, raise_if_missing=False
+    ):
+        return
     aside = get_config_value("default_gripper_aside_pos", raise_if_missing=False)
     if aside:
         arm.move_to(aside, 1, block_until_reach=True)
