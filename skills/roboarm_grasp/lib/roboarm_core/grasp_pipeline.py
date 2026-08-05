@@ -54,7 +54,7 @@ def grasp_detections(
         target_x, target_y = arm.pixel2pos(u, v)
         gripper_angle_rad = arm.gripper_angle_by_longer(u, v, w, h, angle_deg)
         class_place_pos = resolve_place_pos(
-            class_name,
+            class_name=class_name,
             place_pos=place_pos,
             target_x=target_x,
             target_y=target_y,
@@ -96,6 +96,10 @@ def grasp_detections(
 
 
 def move_gripper_aside(arm: Arm) -> None:
+    if not get_config_value(
+        "move_gripper_aside_for_camera", True, raise_if_missing=False
+    ):
+        return
     aside = get_config_value("default_gripper_aside_pos", raise_if_missing=False)
     if aside:
         arm.move_to(aside, 1, block_until_reach=True)

@@ -317,7 +317,13 @@ class Arm:
         pixel_coords = np.array([[u], [v], [1]])
         world_coords = self.hand_eye_calibration_matrix @ pixel_coords
         world_coords /= world_coords[2]
-        return float(world_coords[0, 0]), float(world_coords[1, 0])
+        x = float(world_coords[0, 0])
+        y = float(world_coords[1, 0])
+        offset = get_config_value("calibration_xy_offset", raise_if_missing=False)
+        if offset and len(offset) >= 2:
+            x += float(offset[0])
+            y += float(offset[1])
+        return x, y
 
     @staticmethod
     def gripper_angle_by_longer(

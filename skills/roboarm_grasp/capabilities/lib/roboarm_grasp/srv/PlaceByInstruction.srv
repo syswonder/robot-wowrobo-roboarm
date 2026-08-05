@@ -1,0 +1,6 @@
+# 将夹爪中的物体放到 instruction 指定的位置（如「盒子」）；class_name 可选 fallback。 优先使用instruction
+std_msgs/String instruction
+std_msgs/String class_name
+---
+bool success
+std_msgs/String message

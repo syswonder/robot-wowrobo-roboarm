@@ -1,0 +1,6 @@
+# 根据自然语言指令识别所有目标，逐个抓取并放置到对应位置。仅在用户明确使用如"所有","全部"等指令时，才执行此操作。
+std_msgs/String instruction
+---
+bool success
+std_msgs/String message
+std_msgs/String class_name

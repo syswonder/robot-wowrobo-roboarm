@@ -60,17 +60,24 @@ def apply_instruction_x_sign(pos: list[float], instruction: str) -> list[float]:
 
 
 def resolve_place_pos(
-    class_name: str,
     *,
     instruction: str = "",
+    class_name: str = "",
     place_pos: dict[str, Any] | None = None,
     target_x: float = 0.0,
     target_y: float = 0.0,
 ) -> list[float]:
+    """解析放置坐标。instruction 优先（如「盒子」），class_name 作为 fallback。"""
     if place_pos is None:
         place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
 
-    template = _find_place_template(class_name, place_pos)
+    template: list[Any] | None = None
+    place_instruction = instruction.strip()
+    resolved_class_name = class_name.strip()
+    if place_instruction:
+        template = _find_place_template(place_instruction, place_pos)
+    if template is None and resolved_class_name:
+        template = _find_place_template(resolved_class_name, place_pos)
     if template is None:
         default = get_config_value(
             "default_place_pos", default=[0.1, 0.1], raise_if_missing=False
@@ -78,4 +85,4 @@ def resolve_place_pos(
         template = default if default else [0.1, 0.1]
 
     resolved = _resolve_pos_refs(template, target_x=target_x, target_y=target_y)
-    return apply_instruction_x_sign(resolved, instruction)
+    return apply_instruction_x_sign(resolved, place_instruction or instruction)
