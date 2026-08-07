@@ -46,10 +46,10 @@ prompts_file: prompts.toml
 https_proxy:
 llm_model: qwen3.6-flash
 #如果相机放在臂对面，就写为true
-RotationCam2Arm: true
+RotationCam2Arm: false
 
 # grasp_by_instruction 检测后端: llm | yolo 默认yolo，如果你要用大模型做检测，就改为llm
-instruction_detect_backend: llm
+instruction_detect_backend: yolo
 
 # MobileSAM：LLM 给中心点/粗框，SAM 分割后 minAreaRect 计算位姿
 mobile_sam_enabled: true
@@ -80,7 +80,7 @@ place_pos:
       - 蓝
   red_block:
     pos:
-      - 0.2
+      - -0.2
       - 0.06
     keywords:
       - red
@@ -101,7 +101,7 @@ place_pos:
       - 白
   box:
     pos:
-      - 0.2
+      - -0.2
       - 0.06
     keywords:
       - box
