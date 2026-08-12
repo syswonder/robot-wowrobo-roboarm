@@ -358,12 +358,22 @@ class Arm:
         angle_deg: float,
     ) -> float:
         p0, p1 = self._long_edge_endpoints_image(u, v, w, h, angle_deg)
+        mirror_long_edge_x = bool(
+            get_config_value(
+                "gripper_angle_mirror_long_edge_x", False, raise_if_missing=False
+            )
+        )
         if hasattr(self, "hand_eye_calibration_matrix"):
             x0, y0 = self.pixel2pos(p0[0], p0[1])
             x1, y1 = self.pixel2pos(p1[0], p1[1])
-            gripper_rot_rad = np.pi / 2 + np.arctan2(y1 - y0, x1 - x0)
+            dx = x1 - x0
+            dy = y1 - y0
         else:
-            gripper_rot_rad = np.pi / 2 + np.arctan2(p1[1] - p0[1], p1[0] - p0[0])
+            dx = p1[0] - p0[0]
+            dy = p1[1] - p0[1]
+        if mirror_long_edge_x:
+            dx = -dx
+        gripper_rot_rad = np.pi / 2 + np.arctan2(dy, dx)
         if gripper_rot_rad > np.pi / 2:
             gripper_rot_rad -= np.pi
         return float(gripper_rot_rad)
