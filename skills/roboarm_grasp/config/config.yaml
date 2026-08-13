@@ -17,10 +17,10 @@ default_gripper_aside_pos:
   - 0.1
   - 0.0
   - 0.12
-# 手眼标定 XY 补偿偏移，单位 m，用于弥补标定误差 [x, y]
+# 手眼标定 XY 补偿偏移，单位 m，用于弥补标定误差 [y, x]
 calibration_xy_offset:
   - 0.0
-  - 0.0
+  - -0.018
 # grasp_by_instruction 抓取成功后是否回到 home 位置（夹爪保持闭合）
 return_home_after_grasp_by_instruction: false
 
@@ -46,10 +46,12 @@ prompts_file: prompts.toml
 https_proxy:
 llm_model: qwen3.6-flash
 #如果相机放在臂对面，就写为true
-RotationCam2Arm: true
+RotationCam2Arm: false
+# 计算抓取角度时将 OBB 长边沿水平方向镜像后再算角（夹爪朝向相反时设为 true）
+gripper_angle_mirror_long_edge_x: true
 
 # grasp_by_instruction 检测后端: llm | yolo 默认yolo，如果你要用大模型做检测，就改为llm
-instruction_detect_backend: llm
+instruction_detect_backend: yolo
 
 # MobileSAM：LLM 给中心点/粗框，SAM 分割后 minAreaRect 计算位姿
 mobile_sam_enabled: true
@@ -80,7 +82,7 @@ place_pos:
       - 蓝
   red_block:
     pos:
-      - 0.2
+      - -0.2
       - 0.06
     keywords:
       - red
@@ -101,7 +103,7 @@ place_pos:
       - 白
   box:
     pos:
-      - 0.2
+      - -0.2
       - 0.06
     keywords:
       - box

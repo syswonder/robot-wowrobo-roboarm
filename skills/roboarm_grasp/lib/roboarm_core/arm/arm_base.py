@@ -326,9 +326,9 @@ class Arm:
         return x, y
 
     @staticmethod
-    def gripper_angle_by_longer(
+    def _long_edge_endpoints_image(
         u: float, v: float, w: float, h: float, angle_deg: float
-    ) -> float:
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
         box_points = cv2.boxPoints(((u, v), (w, h), angle_deg))
         if np.linalg.norm(box_points[0] - box_points[1]) > np.linalg.norm(
             box_points[1] - box_points[2]
@@ -344,10 +344,36 @@ class Arm:
                 if box_points[1][0] < box_points[2][0]
                 else [box_points[2], box_points[1]]
             )
-        gripper_rot_rad = np.pi / 2 + np.arctan2(
-            long_edge_points[1][1] - long_edge_points[0][1],
-            long_edge_points[1][0] - long_edge_points[0][0],
+        return (float(long_edge_points[0][0]), float(long_edge_points[0][1])), (
+            float(long_edge_points[1][0]),
+            float(long_edge_points[1][1]),
         )
+
+    def gripper_angle_by_longer(
+        self,
+        u: float,
+        v: float,
+        w: float,
+        h: float,
+        angle_deg: float,
+    ) -> float:
+        p0, p1 = self._long_edge_endpoints_image(u, v, w, h, angle_deg)
+        mirror_long_edge_x = bool(
+            get_config_value(
+                "gripper_angle_mirror_long_edge_x", False, raise_if_missing=False
+            )
+        )
+        if hasattr(self, "hand_eye_calibration_matrix"):
+            x0, y0 = self.pixel2pos(p0[0], p0[1])
+            x1, y1 = self.pixel2pos(p1[0], p1[1])
+            dx = x1 - x0
+            dy = y1 - y0
+        else:
+            dx = p1[0] - p0[0]
+            dy = p1[1] - p0[1]
+        if mirror_long_edge_x:
+            dx = -dx
+        gripper_rot_rad = np.pi / 2 + np.arctan2(dy, dx)
         if gripper_rot_rad > np.pi / 2:
             gripper_rot_rad -= np.pi
-        return gripper_rot_rad
+        return float(gripper_rot_rad)

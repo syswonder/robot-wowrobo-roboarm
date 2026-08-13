@@ -65,19 +65,6 @@ def _run_yolo_detections(frame: cv2.typing.MatLike) -> list[tuple]:
     return detections
 
 
-def _yolo_tuple_to_detected_from_llm(detection: tuple, frame: cv2.typing.MatLike) -> DetectedFromLLM:
-    (u, v, w, h, _r), _score, _class_id, class_name = detection
-    img_h, img_w = frame.shape[:2]
-    return DetectedFromLLM(
-        id=0,
-        class_name=class_name,
-        box_center_x=float(u) / img_w,
-        box_center_y=float(v) / img_h,
-        box_width=float(w) / img_w,
-        box_height=float(h) / img_h,
-    )
-
-
 def _yolo_tuple_to_box(detection: tuple) -> DetectedBox:
     (u, v, w, h, r), score, _class_id, class_name = detection
     return DetectedBox(
@@ -316,6 +303,76 @@ def _refine_and_catch_first(
     return None, False, sam_debug_list
 
 
+def _yolo_selected_detections(
+    frame: cv2.typing.MatLike,
+    instruction: str,
+    *,
+    select_all: bool,
+    save_path: str | None = None,
+) -> tuple[list[tuple], list[tuple]]:
+    detections = _run_yolo_detections(frame)
+    if select_all:
+        selected = _select_yolo_detections_all(detections, instruction)
+        status = f"selected all: {len(selected)} / {len(detections)}"
+    else:
+        selected = _select_yolo_detections(detections, instruction)
+        status = f"selected: {len(selected)} / {len(detections)}"
+    show_yolo_detection(
+        frame,
+        detections,
+        status_lines=[f"instruction: {instruction}", status],
+        save_path=save_path,
+    )
+    return detections, selected
+
+
+def _catch_yolo_dets_first(
+    frame: cv2.typing.MatLike,
+    detections: list[tuple],
+    *,
+    arm: Any,
+    offset: float,
+    instruction: str,
+    queue_output: Queue,
+    save_path: str | None = None,
+    return_home_after_catch: bool = True,
+) -> tuple[DetectedBox | None, bool]:
+    if not detections:
+        return None, False
+
+    for det in detections:
+        box = _yolo_tuple_to_box(det)
+        ok, _, _, _ = _catch_box(
+            arm,
+            box,
+            offset=offset,
+            queue_output=queue_output,
+            return_home_after_catch=return_home_after_catch,
+        )
+        if ok:
+            show_yolo_detection(
+                frame,
+                detections,
+                status_lines=[
+                    f"instruction: {instruction}",
+                    f"caught: {box.class_name}",
+                ],
+                save_path=save_path,
+            )
+            return box, True
+
+    show_yolo_detection(
+        frame,
+        detections,
+        status_lines=[
+            f"instruction: {instruction}",
+            "no successful catch",
+        ],
+        save_path=save_path,
+    )
+    return None, False
+
+
 def _await_llm_detections(
     frame: cv2.typing.MatLike,
     instruction: str,
@@ -356,27 +413,7 @@ def detect_all_by_instruction(
     *,
     save_path: str | None = None,
 ) -> list[DetectedFromLLM]:
-    """使用 grasp_all prompt / YOLO 全量筛选，返回所有符合指令的检测目标。"""
-    backend = _get_instruction_detect_backend()
-    if backend == "yolo":
-        detections = _run_yolo_detections(frame)
-        selected_dets = _select_yolo_detections_all(detections, instruction)
-        show_yolo_detection(
-            frame,
-            detections,
-            status_lines=[
-                f"instruction: {instruction}",
-                f"selected all: {len(selected_dets)} / {len(detections)}",
-            ],
-            save_path=save_path,
-        )
-        llm_detections: list[DetectedFromLLM] = []
-        for index, det in enumerate(selected_dets, start=1):
-            item = _yolo_tuple_to_detected_from_llm(det, frame)
-            item.id = index
-            llm_detections.append(item)
-        return llm_detections
-
+    """使用 grasp_all prompt 返回所有符合指令的检测目标（仅 LLM 后端）。"""
     detections = _await_llm_detections(
         frame,
         instruction,
@@ -446,31 +483,19 @@ def _grasp_by_instruction_yolo(
     arm: Any,
     save_path: str | None = None,
 ) -> tuple[DetectedBox | None, bool]:
-    detections = _run_yolo_detections(frame)
-    selected_dets = _select_yolo_detections(detections, instruction)
-    show_yolo_detection(
-        frame,
-        detections,
-        status_lines=[
-            f"instruction: {instruction}",
-            f"selected: {len(selected_dets)} / {len(detections)}",
-        ],
-        save_path=save_path,
+    _detections, selected_dets = _yolo_selected_detections(
+        frame, instruction, select_all=False, save_path=save_path
     )
+    if not selected_dets:
+        return None, False
+
     offset = get_config_value("catch_offset")
     return_home_after_catch = get_config_value(
         "return_home_after_grasp_by_instruction", True, raise_if_missing=False
     )
-
-    llm_detections: list[DetectedFromLLM] = []
-    for index, det in enumerate(selected_dets, start=1):
-        item = _yolo_tuple_to_detected_from_llm(det, frame)
-        item.id = index
-        llm_detections.append(item)
-
-    box, caught, _sam_debug = _refine_and_catch_first(
+    return _catch_yolo_dets_first(
         frame,
-        llm_detections,
+        selected_dets,
         arm=arm,
         offset=offset,
         instruction=instruction,
@@ -478,7 +503,6 @@ def _grasp_by_instruction_yolo(
         save_path=save_path,
         return_home_after_catch=return_home_after_catch,
     )
-    return box, caught
 
 
 def grasp_by_instruction(
@@ -625,49 +649,91 @@ def grasp_all_by_instruction(
                 "method": backend,
                 "grasp_success": False,
             }
-        detections = detect_all_by_instruction(
-            frame, instruction, save_path=save_path
-        )
-        if not detections:
-            return {
-                "status": "failed",
-                "reason": "未检测到目标物体",
-                "instruction": instruction,
-                "method": backend,
-                "grasp_success": False,
-            }
-
-        detected_count = len(detections)
         offset = get_config_value("catch_offset")
 
-        for detection in detections:
-            box, caught, _sam_debug = _refine_and_catch_first(
-                frame,
-                [detection],
-                arm=arm,
-                offset=offset,
-                instruction=instruction,
-                queue_output=queue_output,
-                save_path=save_path,
+        if backend == "yolo":
+            _detections, selected_yolo = _yolo_selected_detections(
+                frame, instruction, select_all=True, save_path=save_path
             )
-            if not caught or box is None:
-                continue
-
-            boxes.append(box.class_name)
-            place_result = place_by_instruction("", arm, class_name=box.class_name)
-            if place_result.get("place_success"):
-                grasped_count += 1
-            else:
+            if not selected_yolo:
                 return {
                     "status": "failed",
-                    "reason": place_result.get("reason", "放置失败"),
+                    "reason": "未检测到目标物体",
                     "instruction": instruction,
                     "method": backend,
-                    "grasp_success": grasped_count > 0,
-                    "grasped_count": grasped_count,
-                    "detected_count": detected_count,
-                    "target": ", ".join(boxes),
+                    "grasp_success": False,
                 }
+            detected_count = len(selected_yolo)
+            for det in selected_yolo:
+                box, caught = _catch_yolo_dets_first(
+                    frame,
+                    [det],
+                    arm=arm,
+                    offset=offset,
+                    instruction=instruction,
+                    queue_output=queue_output,
+                    save_path=save_path,
+                )
+                if not caught or box is None:
+                    continue
+
+                boxes.append(box.class_name)
+                place_result = place_by_instruction("", arm, class_name=box.class_name)
+                if place_result.get("place_success"):
+                    grasped_count += 1
+                else:
+                    return {
+                        "status": "failed",
+                        "reason": place_result.get("reason", "放置失败"),
+                        "instruction": instruction,
+                        "method": backend,
+                        "grasp_success": grasped_count > 0,
+                        "grasped_count": grasped_count,
+                        "detected_count": detected_count,
+                        "target": ", ".join(boxes),
+                    }
+        else:
+            detections = detect_all_by_instruction(
+                frame, instruction, save_path=save_path
+            )
+            if not detections:
+                return {
+                    "status": "failed",
+                    "reason": "未检测到目标物体",
+                    "instruction": instruction,
+                    "method": backend,
+                    "grasp_success": False,
+                }
+
+            detected_count = len(detections)
+            for detection in detections:
+                box, caught, _sam_debug = _refine_and_catch_first(
+                    frame,
+                    [detection],
+                    arm=arm,
+                    offset=offset,
+                    instruction=instruction,
+                    queue_output=queue_output,
+                    save_path=save_path,
+                )
+                if not caught or box is None:
+                    continue
+
+                boxes.append(box.class_name)
+                place_result = place_by_instruction("", arm, class_name=box.class_name)
+                if place_result.get("place_success"):
+                    grasped_count += 1
+                else:
+                    return {
+                        "status": "failed",
+                        "reason": place_result.get("reason", "放置失败"),
+                        "instruction": instruction,
+                        "method": backend,
+                        "grasp_success": grasped_count > 0,
+                        "grasped_count": grasped_count,
+                        "detected_count": detected_count,
+                        "target": ", ".join(boxes),
+                    }
     except Exception as exc:
         log.error("grasp_all_by_instruction 异常: %s", exc, exc_info=True)
         return {

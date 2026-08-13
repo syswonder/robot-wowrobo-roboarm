@@ -99,13 +99,13 @@ primitive:
       speaker_device: default
 
 service: 
-  - name: speech
-    path: ${ROBONIX_SOURCE_PATH}/services/speech
-    config:
-      speech_backend: tencent
-      default_speaker_provider_id: audio_driver
-      tencent_asr_appid: ${TENCENT_ASR_APPID}
-      tencent_asr_engine: 16k_zh
+  # - name: speech
+  #   path: ${ROBONIX_SOURCE_PATH}/services/speech
+  #   config:
+  #     speech_backend: tencent
+  #     default_speaker_provider_id: audio_driver
+  #     tencent_asr_appid: ${TENCENT_ASR_APPID}
+  #     tencent_asr_engine: 16k_zh
 
 skill:
   - name: roboarm_grasp
