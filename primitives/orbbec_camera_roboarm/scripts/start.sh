@@ -20,7 +20,7 @@ else
   echo "[orbbec_camera_roboarm] WARN: ROS2 overlay not found; run rbnx build first" >&2
 fi
 
-export ROBONIX_ADVERTISE_HOST="${ROBONIX_ADVERTISE_HOST:-127.0.0.1}"
+export ROBONIX_ADVERTISE_HOST="${ROBONIX_ADVERTISE_HOST:-0.0.0.0}"
 export PYTHONPATH="$PKG_ROOT/src:$(rbnx path robonix-api):$PKG_ROOT:${PYTHONPATH:-}"
 
 exec python3 -m orbbec_camera_roboarm.main

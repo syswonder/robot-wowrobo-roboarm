@@ -28,6 +28,85 @@ _YOLO_MODELS: dict[str, Any] = {}
 
 _ALL_KEYWORDS = ("所有", "全部", "all", "every", "它们", "它们拿起", "都拿起", "都抓")
 
+FAILURE_STAGE_CN = {
+    "camera": "相机",
+    "detect": "检测",
+    "grasp": "抓取",
+    "place": "放置",
+    "config": "参数",
+    "exception": "异常",
+}
+
+
+def _operation_headline(result: dict[str, Any], *, operation: str) -> str:
+    if operation == "grasp":
+        ok = result.get("status") == "success" and result.get("grasp_success")
+        success_label = "抓取成功"
+        default_fail = "检测失败"
+    elif operation == "place":
+        ok = result.get("status") == "success" and result.get("place_success")
+        success_label = "放置成功"
+        default_fail = "放置失败"
+    else:
+        ok = result.get("status") == "success" and result.get("grasp_success")
+        success_label = "批量抓取成功"
+        default_fail = "批量抓取失败"
+
+    if ok:
+        return success_label
+
+    stage = result.get("failure_stage")
+    if stage:
+        return f"{FAILURE_STAGE_CN.get(stage, stage)}失败"
+
+    if operation == "grasp" and result.get("target"):
+        return "抓取失败"
+    return default_fail
+
+
+def format_grasp_message(instruction: str, result: dict[str, Any]) -> str:
+    headline = _operation_headline(result, operation="grasp")
+    method = result.get("method", "llm")
+    target = str(result.get("target", "") or "")
+    parts = [
+        headline,
+        f"后端: {method}",
+        f"指令: {instruction}",
+        f"目标: {target or '无'}",
+    ]
+    if result.get("detected_count") is not None:
+        parts.append(
+            f"检测 {result['detected_count']} 个，"
+            f"成功抓取 {result.get('grasped_count', 0)} 个"
+        )
+    if result.get("reason"):
+        parts.append(f"原因: {result['reason']}")
+    return "; ".join(parts)
+
+
+def format_place_message(instruction: str, result: dict[str, Any]) -> str:
+    headline = _operation_headline(result, operation="place")
+    target = str(result.get("target", "") or "")
+    parts = [headline, f"指令: {instruction or '无'}", f"目标: {target or '无'}"]
+    if result.get("reason"):
+        parts.append(f"原因: {result['reason']}")
+    return "; ".join(parts)
+
+
+def format_grasp_all_message(instruction: str, result: dict[str, Any]) -> str:
+    headline = _operation_headline(result, operation="grasp_all")
+    method = result.get("method", "llm")
+    target = str(result.get("target", "") or "")
+    parts = [headline, f"后端: {method}", f"指令: {instruction}", f"目标: {target or '无'}"]
+    if result.get("detected_count") is not None:
+        parts.append(
+            f"检测 {result['detected_count']} 个，"
+            f"成功抓取 {result.get('grasped_count', 0)} 个"
+        )
+    if result.get("reason"):
+        parts.append(f"原因: {result['reason']}")
+    return "; ".join(parts)
+
 
 def _get_instruction_detect_backend() -> str:
     backend = str(
@@ -83,6 +162,49 @@ def _instruction_implies_all(instruction: str) -> bool:
     return any(keyword in lower for keyword in _ALL_KEYWORDS)
 
 
+def _yolo_fallback_enabled() -> bool:
+    return bool(get_config_value("yolo_fallback", True, raise_if_missing=False))
+
+
+def _yolo_class_matches_place_entry(class_name: str, block_key: str) -> bool:
+    """YOLO 类别名可能是 red，place_pos 键可能是 red_block。"""
+    lower_cls = class_name.lower()
+    bk = block_key.lower()
+    if bk in lower_cls or lower_cls in bk:
+        return True
+    stem = bk.split("_", 1)[0]
+    return stem == lower_cls or lower_cls.startswith(f"{stem}_")
+
+
+def _score_detection_for_instruction_strict(
+    class_name: str,
+    instruction: str,
+    place_pos: dict,
+) -> float:
+    """严格匹配：仅当指令与类别/place_pos 关键词明确对应时得分。"""
+    lower_inst = instruction.lower()
+    lower_cls = class_name.lower()
+    score = 0.0
+    if lower_cls in lower_inst:
+        score += 2.0
+    for block_name, pos_data in place_pos.items():
+        if str(block_name).startswith("_"):
+            continue
+        block_key = str(block_name).lower()
+        if block_key in lower_inst and _yolo_class_matches_place_entry(
+            lower_cls, block_key
+        ):
+            score += 2.0
+        for keyword in pos_data.get("keywords", []):
+            kw = str(keyword).lower()
+            if kw in lower_inst and (
+                kw in lower_cls
+                or _yolo_class_matches_place_entry(lower_cls, block_key)
+            ):
+                score += 3.0
+    return score
+
+
 def _score_detection_for_instruction(
     class_name: str,
     instruction: str,
@@ -97,11 +219,15 @@ def _score_detection_for_instruction(
         if token and token in lower_cls:
             score += 1.5
     for block_name, pos_data in place_pos.items():
-        if block_name.lower() in lower_cls:
+        block_key = block_name.lower()
+        if _yolo_class_matches_place_entry(lower_cls, block_key):
             score += 1.0
         for keyword in pos_data.get("keywords", []):
             kw = str(keyword).lower()
-            if kw in lower_inst and (kw in lower_cls or block_name.lower() in lower_cls):
+            if kw in lower_inst and (
+                kw in lower_cls
+                or _yolo_class_matches_place_entry(lower_cls, block_key)
+            ):
                 score += 3.0
     return score
 
@@ -114,17 +240,23 @@ def _select_yolo_detections(
     if not detections:
         return []
     place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
+    strict = not _yolo_fallback_enabled()
+    score_fn = (
+        _score_detection_for_instruction_strict
+        if strict
+        else _score_detection_for_instruction
+    )
     scored = [
         (
-            _score_detection_for_instruction(
-                _yolo_tuple_to_box(det).class_name, instruction, place_pos
-            ),
+            score_fn(_yolo_tuple_to_box(det).class_name, instruction, place_pos),
             det,
         )
         for det in detections
     ]
     scored.sort(key=lambda item: item[0], reverse=True)
     if scored[0][0] <= 0:
+        if strict:
+            return []
         best_det = max(
             detections,
             key=lambda det: _yolo_tuple_to_box(det).confidence or 0.0,
@@ -143,17 +275,23 @@ def _select_yolo_detections_all(
     if _instruction_implies_all(instruction):
         return detections
     place_pos = get_config_value("place_pos", default={}, raise_if_missing=False)
+    strict = not _yolo_fallback_enabled()
+    score_fn = (
+        _score_detection_for_instruction_strict
+        if strict
+        else _score_detection_for_instruction
+    )
     scored = [
         (
-            _score_detection_for_instruction(
-                _yolo_tuple_to_box(det).class_name, instruction, place_pos
-            ),
+            score_fn(_yolo_tuple_to_box(det).class_name, instruction, place_pos),
             det,
         )
         for det in detections
     ]
     scored.sort(key=lambda item: item[0], reverse=True)
     if scored[0][0] <= 0:
+        if strict:
+            return []
         best_det = max(
             detections,
             key=lambda det: _yolo_tuple_to_box(det).confidence or 0.0,
@@ -524,6 +662,7 @@ def grasp_by_instruction(
         if frame is None:
             return {
                 "status": "failed",
+                "failure_stage": "camera",
                 "reason": "无法获取相机画面",
                 "instruction": instruction,
                 "method": backend,
@@ -541,6 +680,7 @@ def grasp_by_instruction(
         log.error("grasp_by_instruction 异常: %s", exc, exc_info=True)
         return {
             "status": "failed",
+            "failure_stage": "exception",
             "reason": str(exc),
             "instruction": instruction,
             "method": backend,
@@ -548,9 +688,15 @@ def grasp_by_instruction(
         }
 
     if box is None:
+        reason = (
+            "未匹配到指令目标物体"
+            if backend == "yolo" and not _yolo_fallback_enabled()
+            else "未检测到目标物体"
+        )
         return {
             "status": "failed",
-            "reason": "未检测到目标物体",
+            "failure_stage": "detect",
+            "reason": reason,
             "instruction": instruction,
             "method": backend,
             "grasp_success": False,
@@ -558,13 +704,14 @@ def grasp_by_instruction(
 
     return {
         "status": "success" if caught else "failed",
+        "failure_stage": None if caught else "grasp",
         "target": box.class_name,
         "instruction": instruction,
         "method": backend,
         "grasp_success": caught,
         "grasped_count": 1 if caught else 0,
         "detected_count": 1,
-        "reason": None if caught else "抓取失败",
+        "reason": None if caught else "机械臂未能成功抓取目标",
     }
 
 
@@ -583,6 +730,7 @@ def place_by_instruction(
     if not place_instruction and not fallback_class_name:
         return {
             "status": "failed",
+            "failure_stage": "config",
             "reason": "instruction（放置位置）与 class_name 不能同时为空",
             "instruction": place_instruction,
             "place_success": False,
@@ -600,6 +748,7 @@ def place_by_instruction(
         log.error("place_by_instruction 异常: %s", exc, exc_info=True)
         return {
             "status": "failed",
+            "failure_stage": "exception",
             "reason": str(exc),
             "instruction": place_instruction,
             "target": fallback_class_name,
@@ -608,10 +757,11 @@ def place_by_instruction(
 
     return {
         "status": "success" if ok else "failed",
+        "failure_stage": None if ok else "place",
         "target": fallback_class_name,
         "instruction": place_instruction,
         "place_success": ok,
-        "reason": None if ok else "放置失败",
+        "reason": None if ok else "机械臂未能成功放置目标",
     }
 
 
@@ -644,6 +794,7 @@ def grasp_all_by_instruction(
         if frame is None:
             return {
                 "status": "failed",
+                "failure_stage": "camera",
                 "reason": "无法获取相机画面",
                 "instruction": instruction,
                 "method": backend,
@@ -656,9 +807,15 @@ def grasp_all_by_instruction(
                 frame, instruction, select_all=True, save_path=save_path
             )
             if not selected_yolo:
+                reason = (
+                    "未匹配到指令目标物体"
+                    if not _yolo_fallback_enabled()
+                    else "未检测到目标物体"
+                )
                 return {
                     "status": "failed",
-                    "reason": "未检测到目标物体",
+                    "failure_stage": "detect",
+                    "reason": reason,
                     "instruction": instruction,
                     "method": backend,
                     "grasp_success": False,
@@ -684,7 +841,10 @@ def grasp_all_by_instruction(
                 else:
                     return {
                         "status": "failed",
-                        "reason": place_result.get("reason", "放置失败"),
+                        "failure_stage": "place",
+                        "reason": place_result.get(
+                            "reason", "机械臂未能成功放置目标"
+                        ),
                         "instruction": instruction,
                         "method": backend,
                         "grasp_success": grasped_count > 0,
@@ -699,6 +859,7 @@ def grasp_all_by_instruction(
             if not detections:
                 return {
                     "status": "failed",
+                    "failure_stage": "detect",
                     "reason": "未检测到目标物体",
                     "instruction": instruction,
                     "method": backend,
@@ -726,7 +887,10 @@ def grasp_all_by_instruction(
                 else:
                     return {
                         "status": "failed",
-                        "reason": place_result.get("reason", "放置失败"),
+                        "failure_stage": "place",
+                        "reason": place_result.get(
+                            "reason", "机械臂未能成功放置目标"
+                        ),
                         "instruction": instruction,
                         "method": backend,
                         "grasp_success": grasped_count > 0,
@@ -738,6 +902,7 @@ def grasp_all_by_instruction(
         log.error("grasp_all_by_instruction 异常: %s", exc, exc_info=True)
         return {
             "status": "failed",
+            "failure_stage": "exception",
             "reason": str(exc),
             "instruction": instruction,
             "method": backend,
@@ -747,15 +912,35 @@ def grasp_all_by_instruction(
             "target": ", ".join(boxes),
         }
 
+    if grasped_count > 0:
+        return {
+            "status": "success",
+            "failure_stage": None,
+            "target": ", ".join(boxes),
+            "instruction": instruction,
+            "method": backend,
+            "grasp_success": True,
+            "grasped_count": grasped_count,
+            "detected_count": detected_count,
+            "reason": None,
+        }
+
+    failure_stage = "detect" if detected_count == 0 else "grasp"
+    reason = (
+        "未检测到目标物体"
+        if detected_count == 0
+        else "检测到目标但均未能成功抓取"
+    )
     return {
-        "status": "success" if grasped_count > 0 else "failed",
+        "status": "failed",
+        "failure_stage": failure_stage,
         "target": ", ".join(boxes),
         "instruction": instruction,
         "method": backend,
-        "grasp_success": grasped_count > 0,
+        "grasp_success": False,
         "grasped_count": grasped_count,
         "detected_count": detected_count,
-        "reason": None if grasped_count > 0 else "抓取失败",
+        "reason": reason,
     }
 
 

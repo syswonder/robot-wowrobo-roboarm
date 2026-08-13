@@ -16,19 +16,19 @@ name: roboarm
 
 env:
   LOG: "INFO"
-  ROBONIX_ADVERTISE_HOST: "127.0.0.1"
+  ROBONIX_ADVERTISE_HOST: "0.0.0.0"
 
 system:
   atlas:
-    listen: 127.0.0.1:50051
+    listen: 0.0.0.0:50051
     log: info
   executor:
-    listen: 127.0.0.1:50061
+    listen: 0.0.0.0:50061
     log: info
   soma:
     robot_yaml: ./soma.yaml
   pilot:
-    listen: 127.0.0.1:50071
+    listen: 0.0.0.0:50071
     log: info
     vlm:
       upstream: ${VLM_BASE_URL}
@@ -128,3 +128,25 @@ skill:
         - gripper
       gripper_open_width_m: 0.080
       motion_steps: 20
+
+  - name: roboarm_sort
+    path: skills/roboarm_sort
+    config:
+      arm_provider_id: roboarm_arm
+      camera_provider_id: orbbec_camera_roboarm
+      arm_offset:
+        - -2.51
+        - -20.88
+        - -22.77
+        - -79.47
+        - -1.80
+      joint_names:
+        - joint1
+        - joint2
+        - joint3
+        - joint4
+        - joint5
+        - gripper
+      gripper_open_width_m: 0.080
+      motion_steps: 20
+      grasp_config_yaml: skills/roboarm_grasp/config/config.yaml

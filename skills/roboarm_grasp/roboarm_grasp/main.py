@@ -16,6 +16,9 @@ from robonix_api import ATLAS, Err, Ok, Skill
 from roboarm_core.arm.robonix_arm import RobonixArm
 from roboarm_core.config import init_config
 from roboarm_core.llm.catch_by_llm import (
+    format_grasp_all_message,
+    format_grasp_message,
+    format_place_message,
     grasp_all_by_instruction,
     grasp_by_instruction,
     place_by_instruction,
@@ -210,31 +213,12 @@ except ImportError:  # pragma: no cover
 def _format_grasp_result(instruction: str, result: dict[str, Any]) -> tuple[bool, str, str]:
     success = result.get("status") == "success" and result.get("grasp_success")
     target = str(result.get("target", "") or "")
-    method = result.get("method", "llm")
-    msg = (
-        f"检测: {method}; 指令: {instruction}; 目标: {target or '无'}; "
-        f"结果: {result.get('status')}"
-    )
-    if result.get("detected_count") is not None:
-        msg += (
-            f"; 检测 {result['detected_count']} 个，"
-            f"成功抓取 {result.get('grasped_count', 0)} 个"
-        )
-    if result.get("reason"):
-        msg += f"; {result['reason']}"
-    return bool(success), msg, target
+    return bool(success), format_grasp_message(instruction, result), target
 
 
 def _format_place_result(instruction: str, result: dict[str, Any]) -> tuple[bool, str]:
     success = result.get("status") == "success" and result.get("place_success")
-    target = result.get("target", "")
-    msg = (
-        f"指令: {instruction}; 目标: {target or '无'}; "
-        f"结果: {result.get('status')}"
-    )
-    if result.get("reason"):
-        msg += f"; {result['reason']}"
-    return bool(success), msg
+    return bool(success), format_place_message(instruction, result)
 
 
 def _execute_grasp_by_instruction(instruction: str) -> tuple[bool, str, str]:
@@ -275,24 +259,12 @@ def _execute_grasp_all_by_instruction(instruction: str) -> tuple[bool, str, str]
     )
     success = result.get("status") == "success" and result.get("grasp_success")
     target = str(result.get("target", "") or "")
-    method = result.get("method", "llm")
-    msg = (
-        f"批量检测: {method}; 指令: {instruction}; 目标: {target or '无'}; "
-        f"结果: {result.get('status')}"
-    )
-    if result.get("detected_count") is not None:
-        msg += (
-            f"; 检测 {result['detected_count']} 个，"
-            f"成功抓取 {result.get('grasped_count', 0)} 个"
-        )
-    if result.get("reason"):
-        msg += f"; {result['reason']}"
-    return bool(success), msg, target
+    return bool(success), format_grasp_all_message(instruction, result), target
 
 
 if ClassifyAndGrasp_Request is not None:
 
-    @skill.mcp("robonix/skill/roboarm_grasp/classify_and_grasp")
+    #@skill.mcp("robonix/skill/roboarm_grasp/classify_and_grasp")
     def classify_and_grasp(
         req: ClassifyAndGrasp_Request,
     ) -> ClassifyAndGrasp_Response:
@@ -325,7 +297,7 @@ if ClassifyAndGrasp_Request is not None:
 
 if GraspAllByInstruction_Request is not None:
 
-    @skill.mcp("robonix/skill/roboarm_grasp/grasp_all_by_instruction")
+    #@skill.mcp("robonix/skill/roboarm_grasp/grasp_all_by_instruction")
     def grasp_all_by_instruction_tool(
         req: GraspAllByInstruction_Request,
     ) -> GraspAllByInstruction_Response:

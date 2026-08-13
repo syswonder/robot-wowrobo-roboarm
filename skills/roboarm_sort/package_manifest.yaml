@@ -1,0 +1,26 @@
+manifestVersion: 1
+
+build: bash scripts/build.sh
+
+start: bash scripts/start.sh
+
+package:
+  name: "robonix.skill.wowrobo.roboarm.sort"
+  version: 0.1.0
+  description: 按 C/O/S 字母顺序编排积木排列，通过 MCP 调用 roboarm_grasp 抓放。
+  tags:
+    - skill
+    - robonix
+    - sort
+    - manipulation
+  maintainers:
+    - Yuzheng Gao <2300013159@stuu.pku.edu.cn>
+  license: Apache-2.0
+
+capabilities:
+  - name: robonix/skill/roboarm_sort/driver
+    path: capabilities/driver.v1.toml
+  - name: robonix/skill/roboarm_sort/sort_letters
+    path: capabilities/sort_letters.v1.toml
+
+depends: []

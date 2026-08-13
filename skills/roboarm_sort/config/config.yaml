@@ -1,0 +1,27 @@
+# roboarm_sort — C/O/S 字母积木排序配置（与 roboarm_grasp/config 独立）
+# slots[].pos 为放置坐标（米），sort 编排时直接使用，不再查 roboarm_grasp 的 place_pos。
+
+allowed_letters: [C, O, S]
+
+# 从左到右的放置槽位；order 第 i 个字母放到 slots[i]
+slots:
+  - place_instruction: sort_slot_0
+    pos: [-0.15, 0.06]
+  - place_instruction: sort_slot_1
+    pos: [0.00, 0.06]
+  - place_instruction: sort_slot_2
+    pos: [0.15, 0.06]
+
+letters:
+  C:
+    grasp_instruction: 抓红色积木
+    yolo_class: red
+  O:
+    grasp_instruction: 抓黄色积木
+    yolo_class: yellow
+  S:
+    grasp_instruction: 抓蓝色积木
+    yolo_class: blue
+
+# roboarm_grasp 库配置（直接 import roboarm_core，不经 MCP）
+grasp_config_yaml: ../roboarm_grasp/config/config.yaml

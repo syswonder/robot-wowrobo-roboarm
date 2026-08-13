@@ -1,5 +1,5 @@
 urdf:
-  path: ./primitives/roboarm_arm/src/assets/urdf/lerobo/low_cost_robot.urdf
+  path: ./primitives/roboarm_arm/src/assets/urdf/lerobo/empty.urdf
   root_link: base_link
   model_name: koch_follower
 

@@ -1,0 +1,8 @@
+[contract]
+id      = "robonix/skill/roboarm_sort/sort_letters"
+version = "1"
+kind    = "skill"
+idl     = "roboarm_sort/srv/SortLetters.srv"
+
+[mode]
+type = "rpc"

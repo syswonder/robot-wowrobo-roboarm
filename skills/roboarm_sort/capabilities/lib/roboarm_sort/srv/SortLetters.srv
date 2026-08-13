@@ -1,0 +1,5 @@
+# 按给定顺序（如 SOC）将 C/O/S 对应积木从左到右排列。输入顺序为字符串，如 "SOC"。
+std_msgs/String order
+---
+bool success
+std_msgs/String message
